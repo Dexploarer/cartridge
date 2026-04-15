@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cartridge</title>
+    <link rel="stylesheet" href="index.css" />
+    <link rel="stylesheet" href="shadcn-tw.css" />
+  </head>
+  <body>
+    <div id="onboarding-root"></div>
+    <div class="ds-app ds-app--host">
+      <!-- macOS drag region: hiddenInset titlebar and draggable nav rail. -->
+      <header class="window-chrome" id="window-chrome" aria-label="Window">
+        <div class="window-chrome-drag">
+          <span class="window-chrome-glyph" aria-hidden="true"></span>
+          <div class="window-chrome-text">
+            <span class="window-chrome-title">Cartridge</span>
+          </div>
+        </div>
+      </header>
+      <div class="ds-workspace">
+      <aside class="nav-rail nav-rail-glass nav-rail-minimal" aria-label="Primary">
+        <div class="nav-rail-brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+        </div>
+        <nav class="nav-rail-nav">
+          <button type="button" class="nav-rail-btn is-active" data-tab="chat" title="Chat">
+            <span class="nav-rail-ico" aria-hidden="true">◆</span>
+            <span class="nav-rail-label">Chat</span>
+          </button>
+          <button type="button" class="nav-rail-btn" data-tab="apps" title="Store">
+            <span class="nav-rail-ico" aria-hidden="true">▦</span>
+            <span class="nav-rail-label">Store</span>
+          </button>
+        </nav>
+        <div class="nav-rail-footer">
+          <label class="persona-field persona-field-minimal">
+            <span class="persona-field-label">Persona</span>
+            <select id="persona-select" title="Launch persona">
+              <option value="agent-gamer">Agent</option>
+              <option value="dev-gamer" selected>Developer</option>
+              <option value="user-gamer">Player</option>
+            </select>
+          </label>
+        </div>
+      </aside>
+
+      <main class="ds-main">
+        <section id="panel-chat" class="ds-page ds-page--chat tab-panel tab-panel-minimal is-active" data-panel="chat">
+          <div id="chat-intel-strip" class="chat-intel-strip chat-intel-minimal" aria-label="Model route"></div>
+          <div class="chat-panel-layout chat-panel-minimal">
+            <aside class="chat-panel-sidebar chat-sidebar-minimal" aria-label="Threads">
+              <div class="chat-sidebar-head chat-sidebar-head-minimal">Threads</div>
+              <div id="thread-filter-bar" class="thread-filter-bar thread-filter-minimal" role="tablist" aria-label="Filter threads">
+                <button type="button" class="thread-filter-btn is-active" data-thread-filter="all">All</button>
+                <button type="button" class="thread-filter-btn" data-thread-filter="ops">Ops</button>
+                <button type="button" class="thread-filter-btn" data-thread-filter="game">Game</button>
+                <button type="button" class="thread-filter-btn" data-thread-filter="support">Support</button>
+                <button type="button" class="thread-filter-btn" data-thread-filter="stream">Stream</button>
+              </div>
+              <div id="thread-list" class="thread-list chat-thread-list chat-thread-list-minimal"></div>
+            </aside>
+            <div class="chat-panel-thread chat-thread-pane-minimal">
+              <header class="chat-thread-head chat-thread-head-minimal">
+                <h2 id="thread-panel-title" class="chat-thread-title chat-thread-title-minimal">Threads</h2>
+                <p id="thread-panel-summary" class="chat-thread-summary chat-thread-summary-minimal"></p>
+              </header>
+              <div id="chat-messages" class="chat-messages chat-transcript chat-transcript-minimal">
+                <div class="empty-state empty-state-minimal">Select a thread.</div>
+              </div>
+              <div class="chat-composer chat-composer-minimal">
+                <input type="text" id="chat-input" class="chat-input chat-input-minimal" placeholder="Message…" autocomplete="off" />
+                <button type="button" id="send-chat-btn" class="btn-send-minimal">Send</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="panel-apps" class="ds-page ds-page--store tab-panel tab-panel-minimal" data-panel="apps" hidden>
+          <header class="store-head-minimal">
+            <h1 class="store-title-minimal">Store</h1>
+          </header>
+          <div class="store-toolbar-row store-toolbar-minimal">
+            <span class="app-store-search-wrap" aria-hidden="true">
+              <svg class="app-store-search-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+            </span>
+            <input
+              type="search"
+              id="apps-search"
+              class="apps-search-input app-store-search"
+              placeholder="Games, tools, packages…"
+              autocomplete="off"
+            />
+            <button type="button" id="apps-refresh" class="btn-secondary store-toolbar-btn">Refresh</button>
+            <button type="button" id="apps-active-only" class="btn-secondary store-toolbar-btn">Active</button>
+          </div>
+          <p class="app-store-hint-minimal"><kbd>/</kbd> search · right-click surface</p>
+          <div id="store-featured-strip" class="store-featured-strip" hidden aria-label="Featured surfaces"></div>
+          <div class="store-catalog">
+            <section class="store-section glass-panel store-section-minimal">
+              <div class="store-section-header">
+                <div class="store-section-titles">
+                  <h2 class="store-section-title">Games</h2>
+                </div>
+                <span id="apps-count-primary" class="store-section-badge"></span>
+              </div>
+              <div id="primary-apps" class="store-scroll-row"></div>
+            </section>
+            <section class="store-section glass-panel store-section-minimal">
+              <div class="store-section-header">
+                <div class="store-section-titles">
+                  <h2 class="store-section-title">Essentials</h2>
+                </div>
+                <span id="apps-count-support" class="store-section-badge"></span>
+              </div>
+              <div id="support-apps" class="store-scroll-row"></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- Runtime bindings live here; no visible UI. -->
+        <div id="runtime-ghost" class="runtime-ghost" hidden aria-hidden="true">
+          <p id="data-plane-hint" class="sync-hint" hidden></p>
+          <div id="studio-command-deck"></div>
+          <span id="runtime-location"></span>
+          <span id="runtime-cloud"></span>
+          <span id="runtime-sessions"></span>
+          <span id="runtime-connectors"></span>
+          <span id="stat-knowledge-count"></span>
+          <span id="stat-data-count"></span>
+          <dl id="catalog-kv"></dl>
+          <div id="pip-grid"></div>
+          <button type="button" id="btn-host-docs"></button>
+          <button type="button" id="btn-host-clipboard"></button>
+          <button type="button" id="btn-host-file"></button>
+          <div id="knowledge-list"></div>
+          <div id="data-store-list"></div>
+          <button type="button" id="btn-refresh-ai"></button>
+          <p id="ai-probe-error" class="sync-hint" hidden></p>
+          <a id="eliza-dash-link" href="https://www.elizacloud.ai">Eliza</a>
+          <div id="eliza-cloud-status"></div>
+          <div id="eliza-model-rail" hidden></div>
+          <p id="eliza-rail-hint" hidden></p>
+          <input type="password" id="eliza-token-input" autocomplete="off" />
+          <button type="button" id="btn-eliza-apply"></button>
+          <button type="button" id="btn-eliza-signout"></button>
+          <div id="external-ai-list"></div>
+          <div id="local-ai-list"></div>
+          <select id="ai-provider-select"><option value="">—</option></select>
+          <select id="ai-model-select"><option value="">—</option></select>
+          <button type="button" id="btn-ai-save"></button>
+          <div id="agents-list"></div>
+          <div id="connectors-list"></div>
+          <div id="streams-list"></div>
+          <div id="child-list"></div>
+          <select id="target-window"><option value="">—</option></select>
+          <input type="text" id="message-input" />
+          <button type="button" id="send-btn"></button>
+          <div id="messages"><div class="empty-state">—</div></div>
+        </div>
+      </main>
+      </div>
+    </div>
+    <script type="module" src="index.js"></script>
+  </body>
+</html>

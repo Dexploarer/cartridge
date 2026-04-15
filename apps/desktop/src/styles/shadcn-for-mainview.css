@@ -1,0 +1,8 @@
+/**
+ * Utilities (+ theme tokens) only — no Tailwind Preflight here, or it would reset
+ * the Electrobun mainview shell (index.css).
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@source "../components/**/*.{tsx,ts}";
+@source "../mainview/**/*.{tsx,ts}";

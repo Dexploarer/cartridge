@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cartridge · Workspace</title>
+    <link rel="stylesheet" href="index.css" />
+  </head>
+  <body class="child-workspace">
+    <div id="game-viewport" class="game-viewport" data-split="false" aria-label="Game viewport">
+      <div class="game-pane game-pane-a">
+        <span class="game-pane-label">Surface</span>
+        <iframe
+          id="game-frame-a"
+          class="game-frame"
+          title="Game surface"
+          allow="fullscreen; autoplay; camera; microphone; display-capture; gamepad"
+        ></iframe>
+      </div>
+      <div class="game-pane game-pane-b" hidden>
+        <span class="game-pane-label">Split</span>
+        <iframe
+          id="game-frame-b"
+          class="game-frame"
+          title="Split surface"
+          allow="fullscreen; autoplay; camera; microphone; display-capture; gamepad"
+        ></iframe>
+      </div>
+    </div>
+
+    <footer class="workspace-bar">
+      <input type="text" id="message-input" placeholder="Message main console…" autocomplete="off" />
+      <button type="button" id="send-main" class="btn-primary">Send</button>
+      <button type="button" id="toggle-details" class="btn-ghost" aria-expanded="false">
+        Session
+      </button>
+    </footer>
+
+    <div id="details-drawer" class="details-drawer" hidden>
+      <div class="details-drawer-inner">
+        <header class="ws-header">
+          <div class="ws-brand">
+            <span class="ws-mark" aria-hidden="true"></span>
+            <div>
+              <p class="ws-kicker">Cartridge workspace</p>
+              <h1 id="window-title">Session</h1>
+            </div>
+          </div>
+          <p id="surface-summary" class="ws-lede">Waiting for surface context…</p>
+          <div id="surface-meta" class="chips"></div>
+        </header>
+
+        <section class="panel">
+          <h2>Live session</h2>
+          <p id="session-summary" class="muted">Session details will sync from the Cartridge runtime.</p>
+          <div id="session-meta" class="chips"></div>
+          <div id="session-controls" class="chips" style="margin-top: 10px"></div>
+          <p id="session-route" class="muted" style="margin-top: 12px">Routing appears when the session is active.</p>
+          <div id="session-streams" class="chips" style="margin-top: 8px"></div>
+        </section>
+
+        <section class="panel grow">
+          <h2>Transcript</h2>
+          <div id="messages" class="transcript">
+            <div class="empty-state">No messages yet.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <script type="module" src="index.js"></script>
+  </body>
+</html>

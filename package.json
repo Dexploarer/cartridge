@@ -1,0 +1,19 @@
+{
+	"name": "cartridge",
+	"private": true,
+	"type": "module",
+	"workspaces": ["apps/*", "packages/*"],
+	"scripts": {
+		"dev": "bun run --cwd apps/desktop dev",
+		"start": "bun run --cwd apps/desktop start",
+		"build:canary": "bun run --cwd apps/desktop build:canary",
+		"typecheck": "bun run typecheck:shared && bun run typecheck:app-platform && bun run typecheck:runtime && bun run typecheck:desktop",
+		"typecheck:shared": "bun run --cwd packages/shared typecheck",
+		"typecheck:app-platform": "bun run --cwd packages/app-platform typecheck",
+		"typecheck:runtime": "bun run --cwd packages/runtime typecheck",
+		"typecheck:desktop": "bun run --cwd apps/desktop typecheck",
+		"test": "bun run test:app-platform && bun run test:runtime",
+		"test:app-platform": "bun run --cwd packages/app-platform test",
+		"test:runtime": "bun run --cwd packages/runtime test"
+	}
+}

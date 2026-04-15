@@ -1,0 +1,21 @@
+{
+	"name": "@cartridge/app-platform",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "App registry and session platform for Cartridge",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@cartridge/shared": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"typescript": "^5.7.2"
+	}
+}
