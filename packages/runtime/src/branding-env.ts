@@ -1,16 +1,33 @@
 import type { BrandingProfile } from "@cartridge/shared";
 
-function envRecord(): Record<string, string | undefined> {
-	if (typeof Bun !== "undefined") {
-		return Bun.env as Record<string, string | undefined>;
-	}
-	if (typeof process !== "undefined" && process.env) {
-		return process.env as Record<string, string | undefined>;
-	}
-	return {};
+type BrandingEnv = {
+	CARTRIDGE_DOCS_URL?: string;
+	CARTRIDGE_APP_URL?: string;
+	CARTRIDGE_CLOUD_URL?: string;
+	CARTRIDGE_ELIZA_CLOUD_DASHBOARD_URL?: string;
+	CARTRIDGE_ELIZA_CLOUD_API_BASE_URL?: string;
+	CARTRIDGE_BUG_REPORT_URL?: string;
+};
+
+function envRecord(): BrandingEnv {
+	const bunEnv = typeof Bun !== "undefined" ? Bun.env : undefined;
+	const processEnv = typeof process !== "undefined" && process.env ? process.env : undefined;
+
+	return {
+		CARTRIDGE_DOCS_URL: bunEnv?.["CARTRIDGE_DOCS_URL"] ?? processEnv?.["CARTRIDGE_DOCS_URL"],
+		CARTRIDGE_APP_URL: bunEnv?.["CARTRIDGE_APP_URL"] ?? processEnv?.["CARTRIDGE_APP_URL"],
+		CARTRIDGE_CLOUD_URL: bunEnv?.["CARTRIDGE_CLOUD_URL"] ?? processEnv?.["CARTRIDGE_CLOUD_URL"],
+		CARTRIDGE_ELIZA_CLOUD_DASHBOARD_URL:
+			bunEnv?.["CARTRIDGE_ELIZA_CLOUD_DASHBOARD_URL"] ??
+			processEnv?.["CARTRIDGE_ELIZA_CLOUD_DASHBOARD_URL"],
+		CARTRIDGE_ELIZA_CLOUD_API_BASE_URL:
+			bunEnv?.["CARTRIDGE_ELIZA_CLOUD_API_BASE_URL"] ??
+			processEnv?.["CARTRIDGE_ELIZA_CLOUD_API_BASE_URL"],
+		CARTRIDGE_BUG_REPORT_URL:
+			bunEnv?.["CARTRIDGE_BUG_REPORT_URL"] ?? processEnv?.["CARTRIDGE_BUG_REPORT_URL"],
+	};
 }
 
-/** Overlay `CARTRIDGE_*` env vars onto branding defaults. */
 export function mergeBrandingFromEnv(profile: BrandingProfile): BrandingProfile {
 	const env = envRecord();
 	return {

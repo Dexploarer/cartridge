@@ -1,31 +1,54 @@
-export type JsonPrimitive = string | number | boolean | null;
+import { formatErrorMessage } from "@cartridge/shared";
+
+type JsonPrimitive = string | number | boolean | null;
 
 export interface JsonObject {
 	readonly [key: string]: JsonValue | undefined;
 }
 
-export interface JsonArray extends ReadonlyArray<JsonPrimitive | JsonObject | JsonArray> {}
+interface JsonArray extends ReadonlyArray<JsonValue> {}
 
 export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
+export type JsonInput = JsonValue | undefined;
 
-export function isJsonObject(value: JsonValue | null | undefined): value is JsonObject {
+function isJsonPrimitive(value: unknown): value is JsonPrimitive {
+	return (
+		value === null ||
+		typeof value === "string" ||
+		typeof value === "number" ||
+		typeof value === "boolean"
+	);
+}
+
+export function isJsonObject(value: unknown): value is JsonObject {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function isJsonArray(value: unknown): value is JsonArray {
+	return Array.isArray(value) && value.every(isJsonValue);
+}
+
+export function isJsonValue(value: unknown): value is JsonValue {
+	return isJsonPrimitive(value) || isJsonObject(value) || isJsonArray(value);
 }
 
 export async function readJsonResponse(res: Response): Promise<JsonValue> {
 	try {
-		return (await res.json()) as JsonValue;
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Invalid JSON response: ${message}`);
+		const parsed: unknown = await res.json();
+		if (!isJsonValue(parsed)) {
+			throw new Error("Response did not contain valid JSON");
+		}
+		return parsed;
+	} catch (error: unknown) {
+		throw new Error(`Invalid JSON response: ${formatErrorMessage(error)}`);
 	}
 }
 
-export function readString(value: JsonValue | undefined, fallback: string): string {
+export function readString(value: JsonInput, fallback: string): string {
 	return typeof value === "string" ? value : fallback;
 }
 
-export function readNumber(value: JsonValue | undefined, fallback: number): number {
+export function readNumber(value: JsonInput, fallback: number): number {
 	if (typeof value === "number" && !Number.isNaN(value)) {
 		return value;
 	}
@@ -36,7 +59,7 @@ export function readNumber(value: JsonValue | undefined, fallback: number): numb
 	return fallback;
 }
 
-export function readBoolean(value: JsonValue | undefined, fallback: boolean): boolean {
+export function readBoolean(value: JsonInput, fallback: boolean): boolean {
 	if (value === undefined) {
 		return fallback;
 	}
@@ -46,8 +69,8 @@ export function readBoolean(value: JsonValue | undefined, fallback: boolean): bo
 export function readArrayProperty(source: JsonObject, keys: readonly string[]): JsonArray | null {
 	for (const key of keys) {
 		const value = source[key];
-		if (Array.isArray(value)) {
-			return value as JsonArray;
+		if (isJsonArray(value)) {
+			return value;
 		}
 	}
 	return null;

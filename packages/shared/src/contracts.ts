@@ -19,9 +19,7 @@ export type BrandingProfile = {
 	docsUrl: string;
 	appUrl: string;
 	cloudUrl: string;
-	/** Eliza Cloud dashboard URL. */
 	elizaCloudDashboardUrl: string;
-	/** Eliza Cloud API base URL. */
 	elizaCloudApiBaseUrl: string;
 	bugReportUrl: string;
 	hashtags: string[];
@@ -36,12 +34,6 @@ export type BrandingProfile = {
 		clientIdHeader: string;
 		cloudTokenHeader: string;
 		aliases: Record<string, string>;
-	};
-	whiteLabel: {
-		allowEnvAliasSync: boolean;
-		allowThemeOverrides: boolean;
-		allowAssetOverrides: boolean;
-		allowPackageRename: boolean;
 	};
 };
 
@@ -62,12 +54,189 @@ export type GameAppManifest = {
 	};
 };
 
+export type GameSessionManifest = Pick<
+	GameAppManifest,
+	"launchType" | "capabilities" | "packageName"
+>;
+
+export type AppCatalogSummary = {
+	totalApps: number;
+	games: number;
+	support: number;
+	operatorSurfaces: number;
+	personaCoverage: Record<Persona, number>;
+};
+
+export type SessionStatus = "launching" | "active" | "paused" | "ended" | "error";
+
+export type TelemetrySeverity = "info" | "warning" | "critical";
+
+export type OperatorCommandStatus = "queued" | "executed" | "failed";
+
+export type OperatorCommandPayload = Record<string, string | number | boolean | null>;
+
+export type TelemetryFrame = {
+	frameId: string;
+	panel: string;
+	label: string;
+	value: string;
+	severity: TelemetrySeverity;
+	source: string;
+	recordedAt: string;
+};
+
+export type OperatorCommand = {
+	commandId: string;
+	control: string;
+	payload: OperatorCommandPayload;
+	status: OperatorCommandStatus;
+	enqueuedAt: string;
+	resolvedAt: string | null;
+	result: string | null;
+};
+
+export type GameSessionRecord = {
+	sessionId: string;
+	appId: string;
+	displayName: string;
+	persona: Persona;
+	status: SessionStatus;
+	mode: SessionMode;
+	viewer: SessionViewer;
+	launchedFrom: string;
+	startedAt: string;
+	updatedAt: string;
+	commandQueue: OperatorCommand[];
+	telemetry: TelemetryFrame[];
+	suggestions: string[];
+	notes: string[];
+	manifest: GameSessionManifest;
+};
+
+export type AppendTelemetryInput = Array<Omit<TelemetryFrame, "frameId" | "recordedAt">>;
+
+export type EnqueueCommandInput = {
+	control: string;
+	payload?: OperatorCommandPayload;
+	note?: string;
+};
+
+export type ResolveCommandInput = {
+	commandId: string;
+	status: Exclude<OperatorCommandStatus, "queued">;
+	result?: string;
+};
+
+export type PlatformEventMap = {
+	"app.session.started": GameSessionRecord;
+	"app.session.updated": GameSessionRecord;
+	"app.session.ended": GameSessionRecord;
+	"operator.command.enqueued": {
+		sessionId: string;
+		appId: string;
+		command: OperatorCommand;
+	};
+	"operator.command.executed": {
+		sessionId: string;
+		appId: string;
+		command: OperatorCommand;
+	};
+	"telemetry.frame.received": {
+		sessionId: string;
+		appId: string;
+		frame: TelemetryFrame;
+	};
+};
+
+export type PlatformEventEnvelope<
+	K extends keyof PlatformEventMap = keyof PlatformEventMap,
+> = {
+	type: K;
+	payload: PlatformEventMap[K];
+};
+
+export type PlatformEventSink = <K extends keyof PlatformEventMap>(
+	event: PlatformEventEnvelope<K>,
+) => void;
+
 export type SessionLaunchInput = {
 	appId: string;
 	persona: Persona;
 	launchedFrom: string;
 	viewer?: SessionViewer;
 	suggestionSeed?: string[];
+};
+
+export type KnowledgeDocument = {
+	docId: string;
+	title: string;
+	source: "cartridge-memory" | "session" | "agent" | "catalog";
+	scope: string;
+	excerpt: string;
+	tokensApprox: number;
+	lastIndexedAt: string;
+	embeddingModel: string;
+};
+
+export type DataStoreRecord = {
+	storeId: string;
+	label: string;
+	kind: "vector" | "graph" | "relational" | "kv";
+	status: "ready" | "migrating" | "readonly" | "degraded";
+	region: string;
+	recordsApprox: number;
+	syncedWithCartridge: boolean;
+};
+
+export type AiLinkStatus =
+	| "unconfigured"
+	| "configured"
+	| "ok"
+	| "auth_required"
+	| "error"
+	| "offline";
+
+export type ElizaCloudSlice = {
+	kind: "eliza-cloud";
+	dashboardUrl: string;
+	apiBaseUrl: string;
+	authenticated: boolean;
+	authSource: "env" | "session" | "none";
+	status: AiLinkStatus;
+	modelIds: string[];
+	lastError: string | null;
+	scopeNote: "gaming-surfaces-only";
+};
+
+export type ExternalApiSlice = {
+	kind: "external";
+	id: "openai" | "anthropic" | "custom-openai";
+	label: string;
+	configured: boolean;
+	baseUrl: string;
+	status: AiLinkStatus;
+	modelIds: string[];
+	lastError: string | null;
+};
+
+export type LocalModelSlice = {
+	kind: "local";
+	id: "ollama" | "lm-studio";
+	label: string;
+	baseUrl: string;
+	status: AiLinkStatus;
+	modelIds: string[];
+	lastError: string | null;
+};
+
+export type AiPlaneState = {
+	elizaCloud: ElizaCloudSlice;
+	external: ExternalApiSlice[];
+	local: LocalModelSlice[];
+	activeProviderId: string | null;
+	activeModelId: string | null;
+	lastProbeAt: string | null;
+	aggregateProbeError: string | null;
 };
 
 export type OperatorSurfaceSpec = {
@@ -80,17 +249,4 @@ export type OperatorSurfaceSpec = {
 	supportsCommandQueue: boolean;
 	supportsNativeWindowOpen: boolean;
 	detailPanelBehavior: "inline" | "drawer" | "split-pane";
-};
-
-export type WalletProfileSpec = {
-	profileId: Persona;
-	supportedChains: Array<"solana" | "evm">;
-	custodyMode: "custodial" | "non-custodial" | "hybrid";
-	identityMode: "agent-native" | "linked-user" | "team-managed";
-	approvalPolicy: {
-		transfers: "manual-signature" | "policy-gated";
-		trades: "manual-signature" | "policy-gated";
-		gameActions: "auto" | "policy-gated";
-	};
-	appBindings: string[];
 };

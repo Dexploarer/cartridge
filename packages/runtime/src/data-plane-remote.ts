@@ -1,4 +1,4 @@
-import type { DataStoreRecord, KnowledgeDocument } from "./state-types";
+import { formatErrorMessage, type DataStoreRecord, type KnowledgeDocument } from "@cartridge/shared";
 import { readEnvVar } from "./env";
 import {
 	isJsonObject,
@@ -24,13 +24,6 @@ function isKnowledgeSource(value: string): value is KnowledgeDocument["source"] 
 	);
 }
 
-function normalizeKnowledgeSource(value: string): KnowledgeDocument["source"] {
-	if (value === "milady-memory") {
-		return "cartridge-memory";
-	}
-	return isKnowledgeSource(value) ? value : "cartridge-memory";
-}
-
 function isDataStoreKind(value: string): value is DataStoreRecord["kind"] {
 	return value === "vector" || value === "graph" || value === "relational" || value === "kv";
 }
@@ -39,20 +32,25 @@ function isDataStoreStatus(value: string): value is DataStoreRecord["status"] {
 	return value === "ready" || value === "migrating" || value === "readonly" || value === "degraded";
 }
 
-function normalizeKnowledgePayload(json: JsonValue | null): KnowledgeDocument[] {
+function normalizeCollectionPayload<T>(
+	json: JsonValue | null,
+	keys: readonly string[],
+	normalize: (raw: JsonValue | null, index: number) => T,
+): T[] {
 	if (Array.isArray(json)) {
-		return json.map((raw, i) => normalizeKnowledgeDoc(raw, i));
+		return json.map(normalize);
 	}
 	const root = readObject(json ?? undefined);
 	if (!root) {
 		return [];
 	}
 
-	const arr = readArrayProperty(root, ["documents"]);
-	if (arr) {
-		return arr.map((raw, i) => normalizeKnowledgeDoc(raw, i));
-	}
-	return [];
+	const arr = readArrayProperty(root, keys);
+	return arr ? arr.map(normalize) : [];
+}
+
+function normalizeKnowledgePayload(json: JsonValue | null): KnowledgeDocument[] {
+	return normalizeCollectionPayload(json, ["documents"], normalizeKnowledgeDoc);
 }
 
 function normalizeKnowledgeDoc(raw: JsonValue | null, index: number): KnowledgeDocument {
@@ -60,7 +58,7 @@ function normalizeKnowledgeDoc(raw: JsonValue | null, index: number): KnowledgeD
 	const id = readString(o?.["docId"] ?? o?.["id"] ?? o?.["documentId"], `remote-${index}`);
 	const title = readString(o?.["title"] ?? o?.["name"], "Untitled document");
 	const sourceRaw = readString(o?.["source"], "cartridge-memory").toLowerCase();
-	const source = normalizeKnowledgeSource(sourceRaw);
+	const source = isKnowledgeSource(sourceRaw) ? sourceRaw : "cartridge-memory";
 	const scope = readString(o?.["scope"] ?? o?.["namespace"], "platform");
 	const excerpt = readString(o?.["excerpt"] ?? o?.["summary"] ?? o?.["body"], "");
 	const tokensApprox = readNumber(o?.["tokensApprox"] ?? o?.["tokens"] ?? o?.["tokenCount"], 0);
@@ -80,19 +78,7 @@ function normalizeKnowledgeDoc(raw: JsonValue | null, index: number): KnowledgeD
 }
 
 function normalizeDataStoresPayload(json: JsonValue | null): DataStoreRecord[] {
-	if (Array.isArray(json)) {
-		return json.map((raw, i) => normalizeDataStore(raw, i));
-	}
-	const root = readObject(json ?? undefined);
-	if (!root) {
-		return [];
-	}
-
-	const arr = readArrayProperty(root, ["stores"]);
-	if (arr) {
-		return arr.map((raw, i) => normalizeDataStore(raw, i));
-	}
-	return [];
+	return normalizeCollectionPayload(json, ["stores"], normalizeDataStore);
 }
 
 function normalizeDataStore(raw: JsonValue | null, index: number): DataStoreRecord {
@@ -105,10 +91,7 @@ function normalizeDataStore(raw: JsonValue | null, index: number): DataStoreReco
 	const status = isDataStoreStatus(statusRaw) ? statusRaw : "ready";
 	const region = readString(o?.["region"], "remote");
 	const recordsApprox = readNumber(o?.["recordsApprox"] ?? o?.["rowCount"] ?? o?.["count"], 0);
-	const syncedWithCartridge = readBoolean(
-		o?.["syncedWithCartridge"] ?? o?.["syncedWithMilady"],
-		true,
-	);
+	const syncedWithCartridge = readBoolean(o?.["syncedWithCartridge"], true);
 
 	return {
 		storeId,
@@ -121,17 +104,12 @@ function normalizeDataStore(raw: JsonValue | null, index: number): DataStoreReco
 	};
 }
 
-export type RemoteDataPlaneResult = {
+type RemoteDataPlaneResult = {
 	knowledge: KnowledgeDocument[] | null;
 	dataStores: DataStoreRecord[] | null;
 	error: string | null;
 };
 
-/**
- * GET JSON from `CARTRIDGE_KNOWLEDGE_API_URL` and `CARTRIDGE_DATA_PLANE_API_URL`.
- * Optional `CARTRIDGE_API_TOKEN` sets Bearer auth.
- * Responses may be a raw array or `{ documents: [...] }` / `{ stores: [...] }`.
- */
 export async function fetchRemoteDataPlane(): Promise<RemoteDataPlaneResult> {
 	const token = readEnvVar("CARTRIDGE_API_TOKEN");
 	const knowledgeUrl = readEnvVar("CARTRIDGE_KNOWLEDGE_API_URL");
@@ -157,7 +135,7 @@ export async function fetchRemoteDataPlane(): Promise<RemoteDataPlaneResult> {
 			}
 		}
 	} catch (e) {
-		errors.push(`knowledge: ${e instanceof Error ? e.message : String(e)}`);
+		errors.push(`knowledge: ${formatErrorMessage(e)}`);
 	}
 
 	try {
@@ -172,7 +150,7 @@ export async function fetchRemoteDataPlane(): Promise<RemoteDataPlaneResult> {
 			}
 		}
 	} catch (e) {
-		errors.push(`data-plane: ${e instanceof Error ? e.message : String(e)}`);
+		errors.push(`data-plane: ${formatErrorMessage(e)}`);
 	}
 
 	return {

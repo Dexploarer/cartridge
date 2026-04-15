@@ -1,9 +1,8 @@
 import {
 	CartridgeRuntime,
-	type GameSessionRecord,
 	type RuntimeState,
 } from "@cartridge/runtime";
-import { type Persona } from "@cartridge/shared";
+import { type GameSessionRecord, type Persona } from "@cartridge/shared";
 import { parseCartridgeDeepLink } from "./cartridge-deep-link";
 import Electrobun, {
 	ApplicationMenu,
@@ -194,11 +193,9 @@ type ChildWindowRPC = {
 				capabilities: string[];
 				personas: string[];
 			};
-			/** Full-viewport game client(s) in the child webview — `launchUrl` from catalog. */
 			setGameEmbed: {
 				embedUrl: string;
 				splitPlay: boolean;
-				/** `topBand`: scale iframe so the upper game band fills the pane (xRSPS / 'scape letterboxing). */
 				visualFitMode?: "none" | "topBand";
 			};
 			setSessionInfo: {
@@ -394,7 +391,6 @@ const mainWindow = new BrowserWindow({
 	...(process.platform === "darwin"
 		? {
 				titleBarStyle: "hiddenInset" as const,
-				/** Opaque window: content paints a solid shell (no desktop bleed-through). */
 				transparent: false,
 				passthrough: false,
 			}
@@ -415,9 +411,11 @@ runtime.boot();
 void runtime.refreshDataPlaneFromApis().then(() => {
 	broadcastRuntimeState();
 });
-void runtime.refreshAiPlaneProbes().then(() => {
-	broadcastRuntimeState();
-});
+void runtime
+	.refreshAiPlaneProbes()
+	.then(() => {
+		broadcastRuntimeState();
+	});
 runtime.subscribe("app.session.started", () => {
 	broadcastRuntimeState();
 });
@@ -600,7 +598,6 @@ function openWorkspaceWindowForSurface(params: {
 	return { id, sessionId: session.sessionId };
 }
 
-/** Native NSMenu actions from Store context menu (ContextMenu.showContextMenu). */
 function handleNativeContextMenuSurface(kind: string, appId: string, persona: Persona): void {
 	const surface = runtime.getSurface(appId);
 	if (!surface) {
@@ -855,10 +852,6 @@ function applyCartridgeDeepLink(href: string): void {
 	mainWindow.focus();
 }
 
-/**
- * Native shell integration: Application menu, system tray, deep links, zoom, devtools.
- * Uses Electrobun APIs: ApplicationMenu, Tray, Utils.showNotification, events (open-url, menu, tray).
- */
 function installCartridgeElectrobunIntegration(win: BrowserWindow): void {
 	const shellMenu: ApplicationMenuItemConfig[] = [
 		{

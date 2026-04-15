@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { CartridgeRuntime } from "./index";
 
+function createFetchMock(handler: () => Promise<Response>): typeof fetch {
+	return Object.assign(handler, {
+		preconnect: async () => {},
+	}) as typeof fetch;
+}
+
 describe("CartridgeRuntime", () => {
 	test("uses only Cartridge header aliases", () => {
 		const runtime = new CartridgeRuntime();
@@ -45,12 +51,14 @@ describe("CartridgeRuntime", () => {
 			result: "market-opened",
 		});
 
-		runtime.sendChatMessage({
-			appId: "babylon",
-			sessionId: session.sessionId,
-			author: "Operator",
-			body: "Watch the alpha market closely.",
-		});
+		for (let index = 0; index < 40; index += 1) {
+			runtime.sendChatMessage({
+				appId: "babylon",
+				sessionId: session.sessionId,
+				author: "Operator",
+				body: `Watch the alpha market closely ${index}.`,
+			});
+		}
 
 		runtime.appendTelemetry(session.sessionId, [
 			{
@@ -65,17 +73,27 @@ describe("CartridgeRuntime", () => {
 		runtime.endSession(session.sessionId, "Scenario complete");
 
 		const state = runtime.getRuntimeState();
+		const babylonMessages =
+			state.chatThreads.find((thread) => thread.appId === "babylon")?.messages ?? [];
 
 		expect(state.runtime.totalSurfaceCount).toBe(8);
 		expect(state.runtime.totalSessionCount).toBe(1);
 		expect(state.sessions[0]?.status).toBe("ended");
 		expect(state.agents.some((agent) => agent.homeAppId === "babylon")).toBe(true);
-		expect(
-			state.chatThreads.find((thread) => thread.appId === "babylon")?.messages.length,
-		).toBeGreaterThan(1);
+		expect(babylonMessages.length).toBe(32);
+		expect(babylonMessages.some((message) => message.body === "Watch the alpha market closely 0.")).toBe(
+			false,
+		);
+		expect(babylonMessages.some((message) => message.body === "Watch the alpha market closely 39.")).toBe(
+			true,
+		);
+		expect(babylonMessages.at(-1)?.body).toBe("Babylon session ended: Scenario complete");
 		expect(state.pipScreens.some((screen) => screen.appId === "babylon")).toBe(true);
 		expect(state.streams.some((stream) => stream.destinationId === "twitch")).toBe(true);
 		expect(state.knowledge.length).toBeGreaterThan(0);
+		expect(state.knowledge.every((doc) => doc.embeddingModel === "cartridge-text-embed-v3")).toBe(
+			true,
+		);
 		expect(state.dataStores.length).toBe(4);
 		expect(state.aiPlane.elizaCloud.kind).toBe("eliza-cloud");
 		expect(state.aiPlane.external.some((x) => x.id === "openai")).toBe(true);
@@ -88,5 +106,24 @@ describe("CartridgeRuntime", () => {
 		expect(runtime.getEventHistory().some((event) => event.type === "app.session.started")).toBe(
 			true,
 		);
+	});
+
+	test("refreshAiPlaneProbes records probe errors without swallowing them", async () => {
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = createFetchMock(async () => {
+			throw new TypeError("fetch failed");
+		});
+
+		try {
+			const runtime = new CartridgeRuntime();
+			await runtime.refreshAiPlaneProbes();
+
+			const state = runtime.getRuntimeState();
+			expect(state.aiPlane.lastProbeAt).not.toBeNull();
+			expect(state.aiPlane.aggregateProbeError).toBeNull();
+			expect(state.aiPlane.elizaCloud.lastError).toContain("fetch failed");
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
 	});
 });

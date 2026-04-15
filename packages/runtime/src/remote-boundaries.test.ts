@@ -4,14 +4,30 @@ import { probeOpenAiCompatibleModels } from "./ai-plane-probe";
 import { fetchRemoteDataPlane } from "./data-plane-remote";
 import { readJsonResponse } from "./json";
 
+function createFetchMock(handler: () => Promise<Response>): typeof fetch {
+	return Object.assign(handler, {
+		preconnect: async () => {},
+	}) as typeof fetch;
+}
+
+const ENV_KEYS = [
+	"CARTRIDGE_API_TOKEN",
+	"CARTRIDGE_KNOWLEDGE_API_URL",
+	"CARTRIDGE_DATA_PLANE_API_URL",
+] as const;
+
 function withEnvOverrides(
-	overrides: Record<string, string | undefined>,
+	overrides: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>,
 	run: () => Promise<void> | void,
 ): Promise<void> | void {
 	const previousValues = new Map<string, string | undefined>();
 
-	for (const [key, value] of Object.entries(overrides)) {
+	for (const key of ENV_KEYS) {
 		previousValues.set(key, process.env[key]);
+		if (!Object.hasOwn(overrides, key)) {
+			continue;
+		}
+		const value = overrides[key];
 		if (value === undefined) {
 			delete process.env[key];
 		} else {
@@ -50,7 +66,7 @@ describe("runtime remote parsing boundaries", () => {
 
 	test("probeOpenAiCompatibleModels surfaces malformed JSON errors", async () => {
 		const originalFetch = globalThis.fetch;
-		globalThis.fetch = (async () => new Response("not json", { status: 200 })) as unknown as typeof fetch;
+		globalThis.fetch = createFetchMock(async () => new Response("not json", { status: 200 }));
 
 		try {
 			const result = await probeOpenAiCompatibleModels("https://example.test", "token");
@@ -63,7 +79,7 @@ describe("runtime remote parsing boundaries", () => {
 
 	test("fetchRemoteDataPlane surfaces malformed JSON errors", async () => {
 		const originalFetch = globalThis.fetch;
-		globalThis.fetch = (async () => new Response("not json", { status: 200 })) as unknown as typeof fetch;
+		globalThis.fetch = createFetchMock(async () => new Response("not json", { status: 200 }));
 
 		try {
 			await withEnvOverrides(

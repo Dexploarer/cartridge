@@ -1,6 +1,5 @@
 import Electrobun, { Electroview } from "electrobun/view";
 
-/** xRSPS / 'scape client paints the playable stack in the upper ~35–40% of the page; scale that band to fill the pane. */
 const WORKSPACE_TOP_BAND_FRACTION = 0.38;
 const WORKSPACE_EMBED_MAX_SCALE = 3.25;
 

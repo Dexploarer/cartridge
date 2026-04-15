@@ -1,4 +1,4 @@
-import type { BrandingProfile } from "@cartridge/shared";
+import { formatErrorMessage, type BrandingProfile } from "@cartridge/shared";
 
 import { readEnvVar } from "./env";
 import { isJsonObject, readJsonResponse, type JsonValue } from "./json";
@@ -12,34 +12,20 @@ type ElizaModelProbeResult = ModelProbeResult & {
 	status: number;
 };
 
-function collectModelIds(items: ReadonlyArray<JsonValue> | undefined): string[] {
-	if (!Array.isArray(items)) {
-		return [];
-	}
-	const modelIds: string[] = [];
+function collectStringPropertyValues(
+	items: ReadonlyArray<JsonValue>,
+	property: "id" | "name",
+): string[] {
+	const values: string[] = [];
 	for (const item of items) {
-		if (isJsonObject(item) && typeof item["id"] === "string") {
-			modelIds.push(item["id"]);
+		if (isJsonObject(item) && typeof item[property] === "string") {
+			values.push(item[property]);
 		}
 	}
-	return modelIds;
+	return values;
 }
 
-function collectModelNames(items: ReadonlyArray<JsonValue> | undefined): string[] {
-	if (!Array.isArray(items)) {
-		return [];
-	}
-	const modelIds: string[] = [];
-	for (const item of items) {
-		if (isJsonObject(item) && typeof item["name"] === "string") {
-			modelIds.push(item["name"]);
-		}
-	}
-	return modelIds;
-}
-
-/** Probe ElizaOS Cloud OpenAI-compatible model list (Bearer API key). */
-export async function probeElizaCloudModels(
+async function probeElizaCloudModels(
 	apiBaseUrl: string,
 	token: string | undefined,
 ): Promise<ElizaModelProbeResult> {
@@ -62,19 +48,18 @@ export async function probeElizaCloudModels(
 		if (!Array.isArray(data)) {
 			return { modelIds: [], error: "Unexpected /models response", status: res.status };
 		}
-		const modelIds = collectModelIds(data);
+		const modelIds = collectStringPropertyValues(data, "id");
 		return { modelIds, error: null, status: res.status };
 	} catch (e) {
 		return {
 			modelIds: [],
-			error: e instanceof Error ? e.message : String(e),
+			error: formatErrorMessage(e),
 			status: 0,
 		};
 	}
 }
 
-/** Ollama tags — local models. */
-export async function probeOllama(baseUrl: string): Promise<ModelProbeResult> {
+async function probeOllama(baseUrl: string): Promise<ModelProbeResult> {
 	const u = baseUrl.replace(/\/$/, "");
 	const url = `${u}/api/tags`;
 	try {
@@ -87,14 +72,13 @@ export async function probeOllama(baseUrl: string): Promise<ModelProbeResult> {
 		if (!Array.isArray(models)) {
 			return { modelIds: [], error: "Unexpected Ollama response" };
 		}
-		const modelIds = collectModelNames(models);
+		const modelIds = collectStringPropertyValues(models, "name");
 		return { modelIds, error: null };
 	} catch (e) {
-		return { modelIds: [], error: e instanceof Error ? e.message : String(e) };
+		return { modelIds: [], error: formatErrorMessage(e) };
 	}
 }
 
-/** OpenAI-compatible /v1/models (OpenAI, LM Studio, custom base). */
 export async function probeOpenAiCompatibleModels(
 	baseUrl: string,
 	apiKey: string | undefined,
@@ -118,10 +102,10 @@ export async function probeOpenAiCompatibleModels(
 		if (!Array.isArray(data)) {
 			return { modelIds: [], error: "Unexpected OpenAI-compatible /models" };
 		}
-		const modelIds = collectModelIds(data);
+		const modelIds = collectStringPropertyValues(data, "id");
 		return { modelIds, error: null };
 	} catch (e) {
-		return { modelIds: [], error: e instanceof Error ? e.message : String(e) };
+		return { modelIds: [], error: formatErrorMessage(e) };
 	}
 }
 
@@ -134,7 +118,6 @@ export type AiProbeBundle = {
 	custom: ModelProbeResult;
 };
 
-/** Run all probes in parallel; keys never logged. */
 export async function runAllAiProbes(branding: BrandingProfile, elizaToken: string | undefined): Promise<AiProbeBundle> {
 	const openaiKey = readEnvVar("OPENAI_API_KEY") ?? readEnvVar("CARTRIDGE_OPENAI_API_KEY");
 	const openaiBase = readEnvVar("CARTRIDGE_OPENAI_BASE_URL") ?? "https://api.openai.com/v1";

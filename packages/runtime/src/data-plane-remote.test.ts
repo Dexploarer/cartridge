@@ -7,16 +7,18 @@ const KEYS = ["CARTRIDGE_API_TOKEN", "CARTRIDGE_KNOWLEDGE_API_URL", "CARTRIDGE_D
 const originalValues = new Map<(typeof KEYS)[number], string | undefined>();
 const originalFetch = globalThis.fetch;
 
-function withRuntimeEnv(overrides: Record<(typeof KEYS)[number], string | undefined>): void {
+function withRuntimeEnv(overrides: Partial<Record<(typeof KEYS)[number], string | undefined>>): void {
 	for (const key of KEYS) {
 		if (!originalValues.has(key)) {
 			originalValues.set(key, process.env[key]);
 		}
 	}
 
-	for (const [key, value] of Object.entries(overrides) as Array<
-		[(typeof KEYS)[number], string | undefined]
-	>) {
+	for (const key of KEYS) {
+		if (!Object.hasOwn(overrides, key)) {
+			continue;
+		}
+		const value = overrides[key];
 		if (value === undefined) {
 			delete process.env[key];
 		} else {
@@ -38,9 +40,11 @@ function restoreRuntimeEnv(): void {
 }
 
 function withFetchMock(
-	handler: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>,
+	handler: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
 ): void {
-	globalThis.fetch = handler as typeof fetch;
+	globalThis.fetch = Object.assign(handler, {
+		preconnect: originalFetch.preconnect,
+	}) as typeof fetch;
 }
 
 afterEach(() => {
@@ -174,7 +178,7 @@ describe("fetchRemoteDataPlane", () => {
 		expect(result.dataStores?.[0]?.syncedWithCartridge).toBe(true);
 	});
 
-	test("normalizes legacy Milady wire fields into Cartridge names", async () => {
+	test("defaults missing optional payload fields to Cartridge-safe values", async () => {
 		withRuntimeEnv({
 			CARTRIDGE_KNOWLEDGE_API_URL: "https://example.invalid/knowledge",
 			CARTRIDGE_DATA_PLANE_API_URL: "https://example.invalid/data",
@@ -186,9 +190,8 @@ describe("fetchRemoteDataPlane", () => {
 				return new Response(
 					JSON.stringify([
 						{
-							docId: "doc-legacy",
-							title: "Legacy Knowledge",
-							source: "milady-memory",
+							docId: "doc-default",
+							title: "Default Knowledge",
 						},
 					]),
 					{ status: 200, headers: { "content-type": "application/json" } },
@@ -198,9 +201,8 @@ describe("fetchRemoteDataPlane", () => {
 			return new Response(
 				JSON.stringify([
 					{
-						storeId: "store-legacy",
-						label: "Legacy Sync",
-						syncedWithMilady: "true",
+						storeId: "store-default",
+						label: "Default Sync",
 					},
 				]),
 				{ status: 200, headers: { "content-type": "application/json" } },
@@ -209,11 +211,12 @@ describe("fetchRemoteDataPlane", () => {
 
 		const result = await fetchRemoteDataPlane();
 
+		expect(result.knowledge?.[0]?.docId).toBe("doc-default");
 		expect(result.knowledge?.[0]?.source).toBe("cartridge-memory");
 		expect(result.dataStores?.[0]?.syncedWithCartridge).toBe(true);
 	});
 
-	test("ignores undocumented legacy wrapper objects", async () => {
+	test("ignores unsupported wrapper objects", async () => {
 		withRuntimeEnv({
 			CARTRIDGE_KNOWLEDGE_API_URL: "https://example.invalid/knowledge",
 			CARTRIDGE_DATA_PLANE_API_URL: "https://example.invalid/data",

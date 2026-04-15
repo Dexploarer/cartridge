@@ -1,26 +1,20 @@
 import {
 	ACTIVE_SURFACES,
 	OPERATOR_SURFACES,
+	type AppCatalogSummary,
 	type GameAppManifest,
 	type OperatorSurfaceSpec,
 	type Persona,
 	type SurfaceCategory,
 } from "@cartridge/shared";
 
-/**
- * Per-surface embed URL override for the Bun desktop host (and tests).
- * Pattern: `CARTRIDGE_LAUNCH_URL_<APP_ID>` with hyphens → underscores, uppercased.
- * Example: **`'scape`** (`appId: "scape"`) → `CARTRIDGE_LAUNCH_URL_SCAPE`.
- * For `'scape`, also honor `SCAPE_CLIENT_URL` when the Cartridge-specific var is unset.
- */
 export function launchUrlOverrideEnvKey(appId: string): string {
 	return `CARTRIDGE_LAUNCH_URL_${appId.replaceAll("-", "_").toUpperCase()}`;
 }
 
-export function applyLaunchUrlEnvOverrides(apps: GameAppManifest[]): GameAppManifest[] {
+function applyLaunchUrlEnvOverrides(apps: GameAppManifest[]): GameAppManifest[] {
 	return apps.map((app) => {
 		const cartridge = process.env[launchUrlOverrideEnvKey(app.appId)]?.trim();
-		// Scape uses `SCAPE_CLIENT_URL` for the same xRSPS client URL.
 		const legacyScapeClientUrl =
 			app.appId === "scape" ? process.env["SCAPE_CLIENT_URL"]?.trim() : undefined;
 		const raw = cartridge || legacyScapeClientUrl;
@@ -30,14 +24,6 @@ export function applyLaunchUrlEnvOverrides(apps: GameAppManifest[]): GameAppMani
 		return { ...app, launchUrl: raw };
 	});
 }
-
-export type AppCatalogSummary = {
-	totalApps: number;
-	games: number;
-	support: number;
-	operatorSurfaces: number;
-	personaCoverage: Record<Persona, number>;
-};
 
 export class AppRegistry {
 	private readonly appsById: Map<string, GameAppManifest>;

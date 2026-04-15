@@ -1,21 +1,21 @@
 import type {
 	AgentProfile,
-	AiLinkStatus,
-	AiPlaneState,
-	GameSessionRecord,
 	ChatThread,
 	ChatThreadKind,
 	ConnectorState,
-	DataStoreRecord,
-	ExternalApiSlice,
-	KnowledgeDocument,
-	LocalModelSlice,
 	PiPScreen,
 	RuntimeState,
 	StreamDestinationState,
 } from "@cartridge/runtime";
 import {
 	ACTIVE_SURFACES,
+	type AiLinkStatus,
+	type AiPlaneState,
+	type DataStoreRecord,
+	type ExternalApiSlice,
+	type GameSessionRecord,
+	type KnowledgeDocument,
+	type LocalModelSlice,
 	type GameAppManifest,
 	type Persona,
 } from "@cartridge/shared";
@@ -956,33 +956,24 @@ function escapeHtml(s: string): string {
 		.replace(/"/g, "&quot;");
 }
 
+const AI_LINK_STATUS_PRESENTATION: Record<
+	AiLinkStatus,
+	{ label: string; chipClass: string }
+> = {
+	ok: { label: "Connected", chipClass: "chip ok" },
+	configured: { label: "Configured", chipClass: "chip" },
+	unconfigured: { label: "Unconfigured", chipClass: "chip" },
+	auth_required: { label: "Auth required", chipClass: "chip" },
+	error: { label: "Error", chipClass: "chip warn" },
+	offline: { label: "Offline", chipClass: "chip warn" },
+};
+
 function statusLabel(status: AiLinkStatus): string {
-	switch (status) {
-		case "ok":
-			return "Connected";
-		case "unknown":
-			return "Unknown";
-		case "auth_required":
-			return "Auth required";
-		case "error":
-			return "Error";
-		case "offline":
-			return "Offline";
-		default:
-			return status;
-	}
+	return AI_LINK_STATUS_PRESENTATION[status].label;
 }
 
 function statusChipClass(status: AiLinkStatus): string {
-	switch (status) {
-		case "ok":
-			return "chip ok";
-		case "error":
-		case "offline":
-			return "chip warn";
-		default:
-			return "chip";
-	}
+	return AI_LINK_STATUS_PRESENTATION[status].chipClass;
 }
 
 function getModelsForProvider(plane: AiPlaneState, providerId: string): string[] {

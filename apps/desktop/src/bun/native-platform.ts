@@ -1,4 +1,3 @@
-/** Electrobun host surface: windows, shortcuts, sessions, menus, and engine bundles. */
 import Electrobun, {
 	type BrowserView,
 	type BrowserWindow,
@@ -12,24 +11,11 @@ import Electrobun, {
 	Utils,
 	type UpdateStatusEntry,
 } from "electrobun/bun";
-
-type JsonPrimitive = string | number | boolean | null;
-
-type JsonObject = {
-	[key: string]: JsonValue | undefined;
-};
-
-type JsonArray = ReadonlyArray<JsonPrimitive | JsonObject | JsonArray>;
-
-type JsonValue = JsonPrimitive | JsonObject | JsonArray;
+import { isJsonObject } from "@cartridge/runtime";
+import { summarizeForFeed } from "./feed-summary";
+export { isAllowedExternalUrl } from "./url-allowlist";
 
 type ShellNavigateArg = string | { tab: string; highlightAppId?: string };
-
-type ContextMenuClickEvent = JsonObject & {
-	data?: JsonObject & {
-		action?: string;
-	};
-};
 
 export type NativePlatformContext = {
 	sendFeed: (from: string, message: string) => void;
@@ -37,7 +23,6 @@ export type NativePlatformContext = {
 	sendShellNavigate: (arg: ShellNavigateArg) => void;
 };
 
-/** Navigation rules: deny all first, then allow Cartridge and local/dev URLs. */
 export const CARTRIDGE_NAVIGATION_RULES: string[] = [
 	"^*",
 	"views://*",
@@ -46,8 +31,8 @@ export const CARTRIDGE_NAVIGATION_RULES: string[] = [
 	"https://*",
 	"http://localhost:*",
 	"http://127.0.0.1:*",
-	// Allow LAN dev servers because game URLs may point at machines on the local network.
-	"http://10.*:*",
+		// LAN hosts cover local game dev servers.
+		"http://10.*:*",
 	"http://192.168.*:*",
 	"about:*",
 ];
@@ -57,21 +42,6 @@ export function applyCartridgeNavigationRules(webview: BrowserView): void {
 		throw new Error("BrowserView.setNavigationRules is unavailable");
 	}
 	webview.setNavigationRules(CARTRIDGE_NAVIGATION_RULES);
-}
-
-/** Allow only safe schemes from renderer `openExternal` RPC. */
-export function isAllowedExternalUrl(url: string): boolean {
-	try {
-		const u = new URL(url);
-		return (
-			u.protocol === "https:" ||
-			u.protocol === "http:" ||
-			u.protocol === "mailto:" ||
-			u.protocol === "cartridge:"
-		);
-	} catch {
-		return false;
-	}
 }
 
 let gpuOverlay: GpuWindow | null = null;
@@ -106,20 +76,7 @@ function notifyCartridgeUpdater(entry: UpdateStatusEntry): void {
 	}
 }
 
-/** Global shortcut to focus the main window and Chat. */
 const FOCUS_ACCEL = "CommandOrControl+Shift+.";
-
-function summarizeForFeed(evt: JsonValue, max = 420): string {
-	try {
-		const raw =
-			typeof evt === "object" && evt !== null && !Array.isArray(evt) && "data" in evt
-				? JSON.stringify((evt as JsonObject)["data"] ?? evt)
-				: JSON.stringify(evt);
-		return raw.length > max ? `${raw.slice(0, max)}…` : raw;
-	} catch {
-		return String(evt);
-	}
-}
 
 function toggleGpuOverlay(ctx: NativePlatformContext): void {
 	if (gpuOverlay) {
@@ -157,25 +114,21 @@ function toggleGpuOverlay(ctx: NativePlatformContext): void {
 	}
 }
 
-/** Log navigation and download events for a webview. */
 export function attachWebviewMonitor(webview: BrowserView, ctx: NativePlatformContext): void {
 	webview.on("will-navigate", (evt) => {
-		ctx.sendFeed("Navigation", summarizeForFeed(evt as JsonValue));
+		ctx.sendFeed("Navigation", summarizeForFeed(evt));
 	});
 	webview.on("download-started", (evt) => {
-		ctx.sendFeed("Download", `started: ${summarizeForFeed(evt as JsonValue)}`);
+		ctx.sendFeed("Download", `started: ${summarizeForFeed(evt)}`);
 	});
 	webview.on("download-completed", (evt) => {
-		ctx.sendFeed("Download", `completed: ${summarizeForFeed(evt as JsonValue)}`);
+		ctx.sendFeed("Download", `completed: ${summarizeForFeed(evt)}`);
 	});
 	webview.on("download-failed", (evt) => {
-		ctx.sendFeed("Download", `failed: ${summarizeForFeed(evt as JsonValue)}`);
+		ctx.sendFeed("Download", `failed: ${summarizeForFeed(evt)}`);
 	});
 }
 
-/**
- * Menu actions for `installCartridgeElectrobunIntegration` — return true if handled.
- */
 export function handleCartridgeNativeMenuAction(
 	action: string | undefined,
 	_win: BrowserWindow,
@@ -231,7 +184,6 @@ export function installNativePlatformLayer(
 	win: BrowserWindow,
 	ctx: NativePlatformContext,
 ): void {
-	// Keep the bundled engine exports in the build.
 	void Electrobun.three.REVISION;
 	void Electrobun.babylon;
 
@@ -284,7 +236,7 @@ export function installNativePlatformLayer(
 	});
 
 	ContextMenu.on("context-menu-clicked", (evt) => {
-		const action = (evt as ContextMenuClickEvent).data?.action;
+		const action = isJsonObject(evt) && isJsonObject(evt["data"]) ? evt["data"]["action"] : undefined;
 		if (action === "cartridge:ctx-paste") {
 			const t = Utils.clipboardReadText();
 			ctx.sendFeed("Clipboard", t ?? "(empty)");

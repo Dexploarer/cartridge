@@ -1,55 +1,53 @@
 import {
-	type PlatformEventEnvelope,
-	type PlatformEventMap,
 	GameSessionManager,
 	createDefaultAppRegistry,
-	type AppCatalogSummary,
-	type EnqueueCommandInput,
-	type GameSessionRecord,
-	type ResolveCommandInput,
 } from "@cartridge/app-platform";
 import {
 	BRANDING_PROFILE,
 	PRIMARY_GAME_APPS,
+	type AppCatalogSummary,
 	type BrandingProfile,
 	type GameAppManifest,
 	type Persona,
 	type SessionLaunchInput,
 } from "@cartridge/shared";
-import { clone, createId, isoNow, trimHistory } from "@cartridge/shared";
+import {
+	appendTrimmedHistory,
+	clone,
+	cloneItems,
+	createId,
+	isoNow,
+	type AiPlaneState,
+	type DataStoreRecord,
+	type GameSessionRecord,
+	type KnowledgeDocument,
+	type EnqueueCommandInput,
+	type PlatformEventEnvelope,
+	type PlatformEventMap,
+	type ResolveCommandInput,
+} from "@cartridge/shared";
 
 import { buildAiPlaneState, getEffectiveElizaToken } from "./ai-plane";
-import type { AiPlaneState } from "./ai-plane-types";
 import { type AiProbeBundle, runAllAiProbes } from "./ai-plane-probe";
 import { mergeBrandingFromEnv } from "./branding-env";
 import { fetchRemoteDataPlane } from "./data-plane-remote";
 import { TypedEventBus, type TypedEventEnvelope } from "./events";
-import type { KnowledgeDocument, DataStoreRecord } from "./state-types";
 
-export type { KnowledgeDocument, DataStoreRecord } from "./state-types";
-export type {
-	AiPlaneState,
-	AiLinkStatus,
-	ElizaCloudSlice,
-	ExternalApiSlice,
-	LocalModelSlice,
-} from "./ai-plane-types";
-
-export type RuntimeLocation = "local" | "cloud" | "hybrid";
-export type ChatChannel = "ops" | "game" | "support" | "stream" | "system";
+type RuntimeLocation = "local" | "cloud" | "hybrid";
+type ChatChannel = "ops" | "game" | "support" | "stream" | "system";
 export type ChatThreadKind = "ops" | "game" | "support" | "stream";
-export type ConnectorMode = "community" | "audience" | "ops";
-export type ConnectorStatus = "connected" | "degraded" | "planned";
-export type AgentStatus =
+type ConnectorMode = "community" | "audience" | "ops";
+type ConnectorStatus = "connected" | "degraded" | "planned";
+type AgentStatus =
 	| "ready"
 	| "in-game"
 	| "streaming"
 	| "building"
 	| "watching";
-export type StreamStatus = "live" | "standby" | "offline";
-export type PiPScreenState = "live" | "watching" | "idle";
+type StreamStatus = "live" | "standby" | "offline";
+type PiPScreenState = "live" | "watching" | "idle";
 
-export type RuntimeConfig = {
+type RuntimeConfig = {
 	runtimeId: string;
 	brandingProfile: BrandingProfile;
 	runtimeLocation: RuntimeLocation;
@@ -64,7 +62,7 @@ export type RuntimeConfig = {
 	};
 };
 
-export type RuntimeSnapshot = {
+type RuntimeSnapshot = {
 	runtimeId: string;
 	brandId: string;
 	appName: string;
@@ -77,7 +75,6 @@ export type RuntimeSnapshot = {
 	activeSessionCount: number;
 	totalSessionCount: number;
 	bootedAt: string | null;
-	/** Last remote data-plane sync error, if any. */
 	dataPlaneSyncError: string | null;
 };
 
@@ -96,7 +93,7 @@ export type AgentProfile = {
 	threadIds: string[];
 };
 
-export type ChatMessage = {
+type ChatMessage = {
 	messageId: string;
 	threadId: string;
 	author: string;
@@ -151,15 +148,12 @@ export type PiPScreen = {
 	metrics: Array<{ label: string; value: string }>;
 };
 
-/** Main-window embed session; uses `viewer: "embedded"`. */
-export type ShellEmbedState = {
+	type ShellEmbedState = {
 	sessionId: string;
 	appId: string;
 	displayName: string;
-	/** Manifest launch URL. */
 	embedUrl: string;
 	persona: Persona;
-	/** Two-pane split play uses separate webview partitions. */
 	splitPlay: boolean;
 };
 
@@ -174,13 +168,11 @@ export type RuntimeState = {
 	pipScreens: PiPScreen[];
 	knowledge: KnowledgeDocument[];
 	dataStores: DataStoreRecord[];
-	/** AI provider state for cloud, external, and local models. */
 	aiPlane: AiPlaneState;
-	/** Active shell embed session. */
 	shellEmbed: ShellEmbedState | null;
 };
 
-export type CartridgeRuntimeEventMap = PlatformEventMap & {
+type CartridgeRuntimeEventMap = PlatformEventMap & {
 	"runtime.booted": RuntimeSnapshot;
 	"cloud.state.changed": {
 		runtimeLocation: RuntimeLocation;
@@ -188,7 +180,7 @@ export type CartridgeRuntimeEventMap = PlatformEventMap & {
 	};
 };
 
-export type SendChatMessageInput = {
+type SendChatMessageInput = {
 	threadId?: string;
 	author: string;
 	body: string;
@@ -214,9 +206,11 @@ const DEFAULT_STREAMING_DESTINATIONS = [
 	"x",
 	"custom-rtmp",
 ];
+const DEFAULT_EMBEDDING_MODEL = "cartridge-text-embed-v3";
 const MAX_THREAD_MESSAGES = 32;
 const OPS_THREAD_ID = "ops-bridge";
 const STREAM_THREAD_ID = "stream-control";
+const PRIMARY_GAME_APP_IDS = new Set(PRIMARY_GAME_APPS.map((app) => app.appId));
 
 const BASE_AGENT_SEEDS: AgentSeed[] = [
 	{
@@ -288,6 +282,30 @@ function getThreadIdForApp(appId: string): string {
 	return `${appId}-bridge`;
 }
 
+function isPrimaryGameApp(appId: string | null): boolean {
+	return appId !== null && PRIMARY_GAME_APP_IDS.has(appId);
+}
+
+function createAppThread(
+	app: GameAppManifest,
+	threadId: string,
+	now: string,
+	summary: string,
+	participants: string[],
+	messages: ChatMessage[],
+): ChatThread {
+	return {
+		threadId,
+		title: `${app.displayName} Bridge`,
+		kind: app.category === "game" ? "game" : "support",
+		appId: app.appId,
+		summary,
+		participants,
+		lastActivityAt: now,
+		messages,
+	};
+}
+
 function createSeedThreads(
 	apps: GameAppManifest[],
 	appName: string,
@@ -338,15 +356,13 @@ function createSeedThreads(
 
 	const appThreads = apps.map((app) => {
 		const threadId = getThreadIdForApp(app.appId);
-		return {
+		return createAppThread(
+			app,
 			threadId,
-			title: `${app.displayName} Bridge`,
-			kind: app.category === "game" ? "game" : "support",
-			appId: app.appId,
-			summary: app.summary,
-			participants: ["System", app.displayName],
-			lastActivityAt: now,
-			messages: [
+			now,
+			app.summary,
+			["System", app.displayName],
+			[
 				{
 					...seedMessage(
 						threadId,
@@ -355,7 +371,7 @@ function createSeedThreads(
 					appId: app.appId,
 				},
 			],
-		} satisfies ChatThread;
+		);
 	});
 
 	return [opsThread, streamThread, ...appThreads];
@@ -405,7 +421,7 @@ function latestSessionMetric(
 	return { label: telemetry.label, value: telemetry.value };
 }
 
-export function resolveRuntimeConfig(
+function resolveRuntimeConfig(
 	overrides: Partial<RuntimeConfig> = {},
 ): RuntimeConfig {
 	return {
@@ -447,9 +463,7 @@ export class CartridgeRuntime {
 	private aiProbeCache: AiProbeBundle | null = null;
 	private aiProbeAt: string | null = null;
 	private aiProbeAggregateError: string | null = null;
-	/** Current shell-embed session id. */
 	private shellEmbedSessionId: string | null = null;
-	/** Whether the shell embed is split into two panes. */
 	private shellEmbedSplitPlay = false;
 
 	constructor(overrides: Partial<RuntimeConfig> = {}) {
@@ -511,7 +525,6 @@ export class CartridgeRuntime {
 		};
 	}
 
-	/** Refresh remote knowledge and data stores from configured HTTP APIs. */
 	async refreshDataPlaneFromApis(): Promise<void> {
 		const result = await fetchRemoteDataPlane();
 		this.remoteKnowledge = result.knowledge;
@@ -519,20 +532,14 @@ export class CartridgeRuntime {
 		this.remoteDataPlaneError = result.error;
 	}
 
-	/** Refresh AI provider probes. */
 	async refreshAiPlaneProbes(): Promise<void> {
-		try {
-			const token = getEffectiveElizaToken(this.elizaCloudTokenOverride);
-			const bundle = await runAllAiProbes(this.config.brandingProfile, token);
-			this.aiProbeCache = bundle;
-			this.aiProbeAt = isoNow();
-			this.aiProbeAggregateError = null;
-		} catch (e) {
-			this.aiProbeAggregateError = e instanceof Error ? e.message : String(e);
-		}
+		const token = getEffectiveElizaToken(this.elizaCloudTokenOverride);
+		const bundle = await runAllAiProbes(this.config.brandingProfile, token);
+		this.aiProbeCache = bundle;
+		this.aiProbeAt = isoNow();
+		this.aiProbeAggregateError = null;
 	}
 
-	/** Set a process-local Eliza token override. */
 	setElizaCloudSessionToken(token: string | null): void {
 		this.elizaCloudTokenOverride = token;
 	}
@@ -541,7 +548,6 @@ export class CartridgeRuntime {
 		this.elizaCloudTokenOverride = null;
 	}
 
-	/** Set the active AI provider and model. */
 	setActiveAiModel(providerId: string | null, modelId: string | null): void {
 		this.activeAiProviderId = providerId;
 		this.activeAiModelId = modelId;
@@ -563,9 +569,11 @@ export class CartridgeRuntime {
 		const connectors = this.buildConnectors();
 		const streams = this.buildStreams(sessions);
 		const agents = this.buildAgents(sessions, streams);
-		const chatThreads = [...this.chatThreads.values()]
-			.sort((left, right) => compareIsoDesc(left.lastActivityAt, right.lastActivityAt))
-			.map((thread) => clone(thread));
+		const chatThreads = cloneItems(
+			[...this.chatThreads.values()].sort((left, right) =>
+				compareIsoDesc(left.lastActivityAt, right.lastActivityAt),
+			),
+		);
 
 		return {
 			runtime: this.getSnapshot(),
@@ -605,13 +613,11 @@ export class CartridgeRuntime {
 		};
 	}
 
-	/** Launch a surface in the main-shell embed, replacing any existing session. */
-	launchSurfaceInShell(input: {
-		appId: string;
-		persona: Persona;
-		/** Enables two-pane split play with separate webview partitions. */
-		splitPlay?: boolean;
-	}): GameSessionRecord {
+		launchSurfaceInShell(input: {
+			appId: string;
+			persona: Persona;
+			splitPlay?: boolean;
+		}): GameSessionRecord {
 		this.boot();
 		if (this.shellEmbedSessionId) {
 			const prev = this.shellEmbedSessionId;
@@ -630,7 +636,6 @@ export class CartridgeRuntime {
 		return session;
 	}
 
-	/** End the current shell embed session. */
 	clearShellEmbed(): void {
 		if (!this.shellEmbedSessionId) {
 			return;
@@ -671,7 +676,7 @@ export class CartridgeRuntime {
 			threadId: this.getPreferredThreadId(input.appId),
 			author: "System",
 			body: `${session.displayName} launched for ${input.persona} via ${input.launchedFrom}.`,
-			channel: this.getSurface(input.appId)?.category === "game" ? "game" : "support",
+			channel: this.getChannelForAppId(input.appId),
 			appId: input.appId,
 			sessionId: session.sessionId,
 		});
@@ -755,8 +760,9 @@ export class CartridgeRuntime {
 			sentAt: isoNow(),
 		};
 
-		thread.messages = trimHistory(
-			[...thread.messages, message],
+		thread.messages = appendTrimmedHistory(
+			thread.messages,
+			[message],
 			MAX_THREAD_MESSAGES,
 		);
 		thread.lastActivityAt = message.sentAt;
@@ -780,8 +786,7 @@ export class CartridgeRuntime {
 			sessionId,
 			author,
 			body,
-			channel:
-				this.getSurface(session.appId)?.category === "game" ? "game" : "support",
+			channel: this.getChannelForAppId(session.appId),
 		});
 	}
 
@@ -798,18 +803,24 @@ export class CartridgeRuntime {
 
 		const app = appId ? this.registry.getApp(appId) : null;
 		const now = isoNow();
-		const thread: ChatThread = {
-			threadId: resolvedThreadId,
-			title: app ? `${app.displayName} Bridge` : "Ops Bridge",
-			kind: app ? (app.category === "game" ? "game" : "support") : "ops",
-			appId: app?.appId ?? null,
-			summary: app?.summary ?? "Operator coordination thread.",
-			participants: ["System"],
-			lastActivityAt: now,
-			messages: [],
-		};
+		const thread: ChatThread = app
+			? createAppThread(app, resolvedThreadId, now, app.summary, ["System"], [])
+			: {
+					threadId: resolvedThreadId,
+					title: "Ops Bridge",
+					kind: "ops",
+					appId: null,
+					summary: "Operator coordination thread.",
+					participants: ["System"],
+					lastActivityAt: now,
+					messages: [],
+				};
 		this.chatThreads.set(thread.threadId, thread);
 		return thread;
+	}
+
+	private getChannelForAppId(appId: string): ChatChannel {
+		return this.getSurface(appId)?.category === "game" ? "game" : "support";
 	}
 
 	private buildConnectors(): ConnectorState[] {
@@ -843,7 +854,7 @@ export class CartridgeRuntime {
 			},
 		];
 
-		return definitions.map((connector) => clone(connector));
+		return cloneItems(definitions);
 	}
 
 	private buildStreams(
@@ -852,8 +863,7 @@ export class CartridgeRuntime {
 		const leadSession =
 			sessions.find(
 				(session) =>
-					session.status !== "ended" &&
-					PRIMARY_GAME_APPS.some((app) => app.appId === session.appId),
+					session.status !== "ended" && isPrimaryGameApp(session.appId),
 			) ??
 			sessions.find((session) => session.status !== "ended") ??
 			null;
@@ -916,7 +926,7 @@ export class CartridgeRuntime {
 				status = "building";
 			} else if (stream) {
 				status = "streaming";
-			} else if (liveSession && PRIMARY_GAME_APPS.some((app) => app.appId === seed.homeAppId)) {
+			} else if (liveSession && isPrimaryGameApp(seed.homeAppId)) {
 				status = "in-game";
 			} else if (liveSession) {
 				status = "watching";
@@ -1043,7 +1053,7 @@ export class CartridgeRuntime {
 			});
 		}
 
-		return screens.map((screen) => clone(screen));
+		return cloneItems(screens);
 	}
 
 	private buildKnowledgeIndex(
@@ -1053,7 +1063,7 @@ export class CartridgeRuntime {
 		const now = isoNow();
 		const base: KnowledgeDocument[] =
 			this.remoteKnowledge && this.remoteKnowledge.length > 0
-				? this.remoteKnowledge.map((doc) => clone(doc))
+				? cloneItems(this.remoteKnowledge)
 				: [
 						{
 							docId: "cartridge-platform-manifest",
@@ -1064,7 +1074,7 @@ export class CartridgeRuntime {
 								"Unified operator console: gaming surfaces, Cartridge memory scopes, and data-plane routing. Headers map to Eliza-compatible aliases for agent plugins.",
 							tokensApprox: 2400,
 							lastIndexedAt: now,
-							embeddingModel: "milady-text-embed-v3",
+							embeddingModel: DEFAULT_EMBEDDING_MODEL,
 						},
 						{
 							docId: "cartridge-operator-playbook",
@@ -1075,7 +1085,7 @@ export class CartridgeRuntime {
 								"How Cartridge launches native workspaces, routes chat into per-app bridges, and mirrors stream state into monitors.",
 							tokensApprox: 1800,
 							lastIndexedAt: now,
-							embeddingModel: "milady-text-embed-v3",
+							embeddingModel: DEFAULT_EMBEDDING_MODEL,
 						},
 					];
 
@@ -1089,7 +1099,7 @@ export class CartridgeRuntime {
 				excerpt: `Session ${session.sessionId.slice(0, 8)}… · ${session.persona} · ${session.notes.length} notes · telemetry panels: ${session.telemetry.length}`,
 				tokensApprox: 400 + session.notes.length * 32,
 				lastIndexedAt: session.updatedAt,
-				embeddingModel: "milady-text-embed-v3",
+				embeddingModel: DEFAULT_EMBEDDING_MODEL,
 			}));
 
 		const agentDocs: KnowledgeDocument[] = agents.slice(0, 4).map((agent) => ({
@@ -1100,15 +1110,15 @@ export class CartridgeRuntime {
 			excerpt: `${agent.role}. ${agent.summary}`,
 			tokensApprox: 320,
 			lastIndexedAt: now,
-			embeddingModel: "milady-text-embed-v3",
+			embeddingModel: DEFAULT_EMBEDDING_MODEL,
 		}));
 
-		return [...base, ...sessionDocs, ...agentDocs].map((doc) => clone(doc));
+		return cloneItems([...base, ...sessionDocs, ...agentDocs]);
 	}
 
 	private buildDataStores(): DataStoreRecord[] {
 		if (this.remoteDataStores && this.remoteDataStores.length > 0) {
-			return this.remoteDataStores.map((row) => clone(row));
+			return cloneItems(this.remoteDataStores);
 		}
 
 		const cloud = this.config.featureFlags.cloud;
@@ -1154,7 +1164,7 @@ export class CartridgeRuntime {
 			},
 		];
 
-		return rows.map((row) => clone(row));
+		return cloneItems(rows);
 	}
 
 	private handlePlatformEvent<K extends keyof PlatformEventMap>(

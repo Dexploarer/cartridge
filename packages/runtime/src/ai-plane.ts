@@ -1,10 +1,15 @@
 import type { BrandingProfile } from "@cartridge/shared";
 
-import type { AiPlaneState, AiLinkStatus, ElizaCloudSlice, ExternalApiSlice, LocalModelSlice } from "./ai-plane-types";
+import type {
+	AiPlaneState,
+	AiLinkStatus,
+	ElizaCloudSlice,
+	ExternalApiSlice,
+	LocalModelSlice,
+} from "@cartridge/shared";
 import type { AiProbeBundle } from "./ai-plane-probe";
 import { readEnvVar } from "./env";
 
-/** Eliza Cloud token: session override first, then env. */
 export function getEffectiveElizaToken(runtimeOverride: string | null): string | undefined {
 	if (runtimeOverride) {
 		return runtimeOverride;
@@ -12,8 +17,7 @@ export function getEffectiveElizaToken(runtimeOverride: string | null): string |
 	return (
 		readEnvVar("CARTRIDGE_ELIZA_CLOUD_TOKEN") ??
 		readEnvVar("ELIZA_CLOUD_API_KEY") ??
-		readEnvVar("ELIZA_CLOUD_TOKEN") ??
-		undefined
+		readEnvVar("ELIZA_CLOUD_TOKEN")
 	);
 }
 
@@ -35,7 +39,7 @@ function linkStatusFromProbe(
 	if (hasConfig) {
 		return "ok";
 	}
-	return "unknown";
+	return "unconfigured";
 }
 
 export function buildAiPlaneState(
@@ -94,7 +98,7 @@ export function buildAiPlaneState(
 			label: "Anthropic",
 			configured: Boolean(anthropicKey),
 			baseUrl: "https://api.anthropic.com",
-			status: anthropicKey ? "ok" : "unknown",
+			status: anthropicKey ? "configured" : "unconfigured",
 			modelIds: [],
 			lastError: null,
 		},

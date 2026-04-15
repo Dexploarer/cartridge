@@ -32,16 +32,9 @@ export const BRANDING_PROFILE: BrandingProfile = {
 			"x-cartridge-cloud-token": "x-eliza-cloud-token",
 		},
 	},
-	whiteLabel: {
-		allowEnvAliasSync: true,
-		allowThemeOverrides: true,
-		allowAssetOverrides: true,
-		allowPackageRename: true,
-	},
 };
 
 export const PRIMARY_GAME_APPS: GameAppManifest[] = [
-	// Babylon keeps the local-dev launch URL.
 	{
 		appId: "babylon",
 		packageName: "@elizaos/app-babylon",
@@ -93,7 +86,6 @@ export const PRIMARY_GAME_APPS: GameAppManifest[] = [
 			features: ["commands", "telemetry", "suggestions"],
 		},
 	},
-	// Scape keeps the DEFAULT_CLIENT_URL.
 	{
 		appId: "scape",
 		packageName: "@elizaos/app-scape",

@@ -1,21 +1,26 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-	AppRegistry,
 	GameSessionManager,
 	createDefaultAppRegistry,
-	launchUrlOverrideEnvKey,
 } from "./index";
+import { launchUrlOverrideEnvKey } from "./registry";
 
 function withEnvOverrides(
-	overrides: Record<string, string | undefined>,
+	overrides: Partial<{
+		CARTRIDGE_LAUNCH_URL_SCAPE: string | undefined;
+		SCAPE_CLIENT_URL: string | undefined;
+	}>,
 	run: () => void,
 ): void {
 	const previousValues = new Map<string, string | undefined>();
 
-	for (const [key, value] of Object.entries(overrides)) {
+	for (const key of ["CARTRIDGE_LAUNCH_URL_SCAPE", "SCAPE_CLIENT_URL"] as const) {
 		previousValues.set(key, process.env[key]);
-
+		if (!Object.hasOwn(overrides, key)) {
+			continue;
+		}
+		const value = overrides[key];
 		if (value === undefined) {
 			delete process.env[key];
 		} else {
@@ -113,12 +118,9 @@ describe("GameSessionManager", () => {
 	test("tracks session lifecycle without polling", () => {
 		const registry = createDefaultAppRegistry();
 		const events: string[] = [];
-		const manager = new GameSessionManager(
-			registry as Pick<AppRegistry, "getApp" | "getOperatorSurface">,
-			(event) => {
-				events.push(event.type);
-			},
-		);
+		const manager = new GameSessionManager(registry, (event) => {
+			events.push(event.type);
+		});
 
 		const session = manager.startSession({
 			appId: "scape",
@@ -166,5 +168,25 @@ describe("GameSessionManager", () => {
 		expect(events).toContain("operator.command.executed");
 		expect(events).toContain("telemetry.frame.received");
 		expect(events).toContain("app.session.ended");
+	});
+
+	test("trims session notes to the configured history window", () => {
+		const manager = new GameSessionManager(createDefaultAppRegistry());
+		const session = manager.startSession({
+			appId: "scape",
+			persona: "agent-gamer",
+			launchedFrom: "bun-test",
+			viewer: "native-window",
+		});
+
+		for (let index = 0; index < 25; index += 1) {
+			manager.addSessionNote(session.sessionId, `note-${index}`);
+		}
+
+		const updated = manager.getSession(session.sessionId);
+
+		expect(updated?.notes).toHaveLength(20);
+		expect(updated?.notes[0]).toBe("note-5");
+		expect(updated?.notes[19]).toBe("note-24");
 	});
 });

@@ -1,21 +1,19 @@
 import type {
-	GameAppManifest,
-	OperatorSurfaceSpec,
-	SessionLaunchInput,
-	SessionViewer,
-} from "@cartridge/shared";
-import { clone, createId, isoNow, trimHistory } from "@cartridge/shared";
-
-import type { AppRegistry } from "./registry";
-import type {
 	AppendTelemetryInput,
 	EnqueueCommandInput,
+	GameAppManifest,
 	GameSessionRecord,
 	OperatorCommand,
+	OperatorSurfaceSpec,
 	PlatformEventSink,
 	ResolveCommandInput,
+	SessionLaunchInput,
+	SessionViewer,
 	TelemetryFrame,
-} from "./types";
+} from "@cartridge/shared";
+import { appendTrimmedHistory, clone, createId, isoNow } from "@cartridge/shared";
+
+import type { AppRegistry } from "./registry";
 
 const MAX_QUEUE_HISTORY = 24;
 const MAX_TELEMETRY_HISTORY = 40;
@@ -34,10 +32,6 @@ export type SessionManagerStrategies = {
 	) => string[];
 };
 
-function appendNote(notes: string[], note: string): string[] {
-	return trimHistory([...notes, note], MAX_NOTES_HISTORY);
-}
-
 function defaultViewerForApp(app: GameAppManifest): SessionViewer {
 	if (app.launchType === "native-window") {
 		return "native-window";
@@ -48,6 +42,10 @@ function defaultViewerForApp(app: GameAppManifest): SessionViewer {
 	}
 
 	return "embedded";
+}
+
+function appendSessionNote(notes: string[], note: string): string[] {
+	return appendTrimmedHistory(notes, [note], MAX_NOTES_HISTORY);
 }
 
 function createInitialTelemetry(
@@ -171,8 +169,9 @@ export class GameSessionManager {
 				recordedAt: isoNow(),
 			}));
 
-			session.telemetry = trimHistory(
-				[...session.telemetry, ...telemetry],
+			session.telemetry = appendTrimmedHistory(
+				session.telemetry,
+				telemetry,
 				MAX_TELEMETRY_HISTORY,
 			);
 
@@ -213,12 +212,13 @@ export class GameSessionManager {
 		};
 
 		this.mutateSession(sessionId, (draft) => {
-			draft.commandQueue = trimHistory(
-				[...draft.commandQueue, command],
+			draft.commandQueue = appendTrimmedHistory(
+				draft.commandQueue,
+				[command],
 				MAX_QUEUE_HISTORY,
 			);
 			if (input.note) {
-				draft.notes = appendNote(draft.notes, input.note);
+				draft.notes = appendSessionNote(draft.notes, input.note);
 			}
 		});
 
@@ -268,7 +268,7 @@ export class GameSessionManager {
 		return this.mutateSession(sessionId, (draft) => {
 			draft.status = "paused";
 			if (note) {
-				draft.notes = appendNote(draft.notes, note);
+				draft.notes = appendSessionNote(draft.notes, note);
 			}
 		});
 	}
@@ -277,14 +277,14 @@ export class GameSessionManager {
 		return this.mutateSession(sessionId, (draft) => {
 			draft.status = "active";
 			if (note) {
-				draft.notes = appendNote(draft.notes, note);
+				draft.notes = appendSessionNote(draft.notes, note);
 			}
 		});
 	}
 
 	addSessionNote(sessionId: string, note: string): GameSessionRecord {
 		return this.mutateSession(sessionId, (draft) => {
-			draft.notes = appendNote(draft.notes, note);
+			draft.notes = appendSessionNote(draft.notes, note);
 		});
 	}
 
@@ -292,7 +292,7 @@ export class GameSessionManager {
 		const ended = this.mutateSession(sessionId, (draft) => {
 			draft.status = "ended";
 			if (note) {
-				draft.notes = appendNote(draft.notes, note);
+				draft.notes = appendSessionNote(draft.notes, note);
 			}
 		});
 

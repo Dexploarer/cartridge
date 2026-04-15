@@ -122,7 +122,6 @@ code {
 	border: 1px solid var(--border);
 }
 
-/* Design system shell: chrome + workspace (nav + main page templates) */
 .ds-app {
 	min-height: 100vh;
 	display: flex;
