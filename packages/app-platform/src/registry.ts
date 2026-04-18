@@ -12,12 +12,26 @@ export function launchUrlOverrideEnvKey(appId: string): string {
 	return `CARTRIDGE_LAUNCH_URL_${appId.replaceAll("-", "_").toUpperCase()}`;
 }
 
+const LEGACY_LAUNCH_URL_ENV_KEYS: Record<string, string[]> = {
+	babylon: ["BABYLON_CLIENT_URL", "BABYLON_APP_URL", "BABYLON_API_URL"],
+	hyperscape: ["HYPERSCAPE_CLIENT_URL", "HYPERSCAPE_API_URL"],
+	scape: ["SCAPE_CLIENT_URL"],
+};
+
+function resolveLegacyLaunchUrlOverride(appId: string): string | undefined {
+	for (const key of LEGACY_LAUNCH_URL_ENV_KEYS[appId] ?? []) {
+		const value = process.env[key]?.trim();
+		if (value) {
+			return value;
+		}
+	}
+	return undefined;
+}
+
 function applyLaunchUrlEnvOverrides(apps: GameAppManifest[]): GameAppManifest[] {
 	return apps.map((app) => {
 		const cartridge = process.env[launchUrlOverrideEnvKey(app.appId)]?.trim();
-		const legacyScapeClientUrl =
-			app.appId === "scape" ? process.env["SCAPE_CLIENT_URL"]?.trim() : undefined;
-		const raw = cartridge || legacyScapeClientUrl;
+		const raw = cartridge || resolveLegacyLaunchUrlOverride(app.appId);
 		if (!raw) {
 			return app;
 		}

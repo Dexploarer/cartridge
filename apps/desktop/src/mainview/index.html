@@ -81,6 +81,356 @@
           <header class="store-head-minimal">
             <h1 class="store-title-minimal">Store</h1>
           </header>
+          <section id="stream-stage-shell" class="stream-stage-shell" hidden aria-label="Live stream stage">
+            <div class="stream-stage-frame">
+              <div class="stream-stage-head">
+                <div class="stream-stage-copy">
+                  <p id="stream-stage-eyebrow" class="stream-stage-eyebrow">Live stream</p>
+                  <h2 id="stream-stage-title" class="stream-stage-title">Awaiting stream source</h2>
+                  <p id="stream-stage-summary" class="stream-stage-summary"></p>
+                </div>
+                <div class="stream-stage-actions">
+                  <button type="button" id="stream-stage-thread" class="btn-secondary store-toolbar-btn">Stream Chat</button>
+                  <button type="button" id="stream-stage-theater" class="btn-secondary store-toolbar-btn">Theater</button>
+                </div>
+              </div>
+              <div class="stream-stage-canvas">
+                <iframe
+                  id="stream-stage-frame"
+                  class="stream-stage-iframe"
+                  title="Live stream source"
+                  allow="fullscreen; autoplay; camera; microphone; display-capture; gamepad"
+                ></iframe>
+                <div class="stream-stage-overlay">
+                  <div id="stream-stage-meta" class="chips"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="broadcast-console" class="broadcast-console glass-panel" aria-label="Native broadcaster">
+            <div class="broadcast-console-head">
+              <div class="broadcast-console-copy">
+                <p class="stream-stage-eyebrow">Native broadcaster</p>
+                <h2 class="broadcast-console-title">Broadcast control</h2>
+                <p id="broadcast-console-summary" class="broadcast-console-summary">Configure RTMP, permissions, source routing, and audio buses.</p>
+              </div>
+              <div id="broadcast-console-chips" class="chips"></div>
+            </div>
+            <div class="broadcast-console-grid">
+              <label class="broadcast-field">
+                <span class="broadcast-field-label">RTMP destination</span>
+                <input type="url" id="broadcast-destination" class="broadcast-input" placeholder="rtmps://live.example.com/app" autocomplete="off" />
+              </label>
+              <label class="broadcast-field">
+                <span class="broadcast-field-label">Stream key</span>
+                <input type="password" id="broadcast-stream-key" class="broadcast-input" placeholder="Paste stream key" autocomplete="off" />
+              </label>
+            </div>
+            <div class="broadcast-console-actions">
+              <button type="button" id="broadcast-request-permissions" class="btn-secondary">Permissions</button>
+              <button type="button" id="broadcast-start" class="btn-primary">Start broadcast</button>
+              <button type="button" id="broadcast-stop" class="btn-secondary">Stop</button>
+              <button type="button" id="broadcast-reveal" class="btn-secondary">Reveal output</button>
+              <button type="button" id="broadcast-refresh-logs" class="btn-secondary">Refresh logs</button>
+            </div>
+            <div class="broadcast-audio-grid">
+              <div class="broadcast-audio-row">
+                <div class="broadcast-audio-copy">
+                  <strong>App audio</strong>
+                  <span>Game or webview output routed into the stream mix.</span>
+                </div>
+                <label><input type="checkbox" id="broadcast-bus-app-enabled" checked /> On</label>
+                <label><input type="checkbox" id="broadcast-bus-app-muted" /> Mute</label>
+                <input type="range" id="broadcast-bus-app-gain" min="0" max="200" value="100" />
+              </div>
+              <div class="broadcast-audio-row">
+                <div class="broadcast-audio-copy">
+                  <strong>System audio</strong>
+                  <span>Desktop or platform audio in the final stream output.</span>
+                </div>
+                <label><input type="checkbox" id="broadcast-bus-system-enabled" checked /> On</label>
+                <label><input type="checkbox" id="broadcast-bus-system-muted" /> Mute</label>
+                <input type="range" id="broadcast-bus-system-gain" min="0" max="200" value="100" />
+              </div>
+              <div class="broadcast-audio-row">
+                <div class="broadcast-audio-copy">
+                  <strong>Microphone</strong>
+                  <span>Mic bus mixed into the outgoing stream.</span>
+                </div>
+                <label><input type="checkbox" id="broadcast-bus-mic-enabled" checked /> On</label>
+                <label><input type="checkbox" id="broadcast-bus-mic-muted" /> Mute</label>
+                <input type="range" id="broadcast-bus-mic-gain" min="0" max="200" value="100" />
+              </div>
+            </div>
+            <div id="broadcast-log-list" class="broadcast-log-list">
+              <div class="empty-state">Broadcaster logs will appear here.</div>
+            </div>
+          </section>
+          <section id="babylon-workbench" class="babylon-workbench glass-panel" aria-label="Babylon workbench">
+            <div class="babylon-workbench-head">
+              <div class="babylon-workbench-copy">
+                <p class="stream-stage-eyebrow">Babylon operator</p>
+                <h2 class="babylon-workbench-title">Wallets, creation, and market tape</h2>
+                <p id="babylon-workbench-summary" class="babylon-workbench-summary">Babylon operator state will appear here.</p>
+              </div>
+              <div class="babylon-workbench-actions">
+                <button type="button" id="babylon-refresh" class="btn-secondary">Refresh</button>
+              </div>
+            </div>
+            <div id="babylon-workbench-chips" class="chips"></div>
+            <div id="babylon-balance-grid" class="babylon-stats-grid"></div>
+            <div class="babylon-grid">
+              <article class="babylon-card">
+                <div class="babylon-card-head">
+                  <h3>Lead chart</h3>
+                  <span id="babylon-chart-label" class="babylon-card-kicker"></span>
+                </div>
+                <div id="babylon-chart" class="babylon-chart">
+                  <div class="empty-state">No Babylon market history yet.</div>
+                </div>
+              </article>
+              <article class="babylon-card">
+                <div class="babylon-card-head">
+                  <h3>Markets</h3>
+                  <span class="babylon-card-kicker">Active tape</span>
+                </div>
+                <div id="babylon-markets" class="babylon-list">
+                  <div class="empty-state">No markets loaded.</div>
+                </div>
+              </article>
+              <article class="babylon-card">
+                <div class="babylon-card-head">
+                  <h3>Recent trades</h3>
+                  <span class="babylon-card-kicker">Agent feed</span>
+                </div>
+                <div id="babylon-trades" class="babylon-list">
+                  <div class="empty-state">No recent trades yet.</div>
+                </div>
+              </article>
+              <article class="babylon-card">
+                <div class="babylon-card-head">
+                  <h3>Wallet activity</h3>
+                  <span class="babylon-card-kicker">Recent transactions</span>
+                </div>
+                <div id="babylon-transactions" class="babylon-list">
+                  <div class="empty-state">No transactions yet.</div>
+                </div>
+              </article>
+            </div>
+            <form id="babylon-create-form" class="babylon-create-form">
+              <div class="babylon-create-copy">
+                <h3>Create external agent</h3>
+                <p id="babylon-create-summary" class="babylon-create-summary">Set `CARTRIDGE_BABYLON_AUTH_TOKEN` to create Babylon agents from Cartridge.</p>
+              </div>
+              <div class="babylon-create-grid">
+                <label class="broadcast-field">
+                  <span class="broadcast-field-label">External ID</span>
+                  <input type="text" id="babylon-create-id" class="broadcast-input" placeholder="cartridge-babylon-01" autocomplete="off" />
+                </label>
+                <label class="broadcast-field">
+                  <span class="broadcast-field-label">Name</span>
+                  <input type="text" id="babylon-create-name" class="broadcast-input" placeholder="Cartridge Market Pilot" autocomplete="off" />
+                </label>
+                <label class="broadcast-field babylon-create-field-wide">
+                  <span class="broadcast-field-label">Description</span>
+                  <input type="text" id="babylon-create-description" class="broadcast-input" placeholder="Prediction-market pilot routed through Cartridge." autocomplete="off" />
+                </label>
+              </div>
+              <div class="babylon-create-actions">
+                <button type="submit" id="babylon-create" class="btn-primary">Create agent</button>
+              </div>
+              <div id="babylon-create-result" class="babylon-create-result empty-state">New Babylon agent credentials will appear here.</div>
+            </form>
+          </section>
+          <section id="steward-workbench" class="steward-workbench glass-panel" aria-label="Steward workbench">
+            <div class="protocol-workbench-head">
+              <div class="protocol-workbench-copy">
+                <p class="stream-stage-eyebrow">Steward operator</p>
+                <h2 class="protocol-workbench-title">Wallet governance, approvals, and local sidecar state</h2>
+                <p id="steward-workbench-summary" class="protocol-workbench-summary">Steward operator state will appear here.</p>
+              </div>
+              <div class="protocol-workbench-actions">
+                <button type="button" id="steward-refresh" class="btn-secondary">Refresh</button>
+              </div>
+            </div>
+            <div id="steward-workbench-chips" class="chips"></div>
+            <div id="steward-balance-grid" class="babylon-stats-grid"></div>
+            <div class="protocol-grid">
+              <article class="protocol-card">
+                <div class="protocol-card-head">
+                  <h3>Agent and wallets</h3>
+                  <span class="babylon-card-kicker">Vault identity</span>
+                </div>
+                <div id="steward-agent-summary" class="protocol-summary-list">
+                  <div class="empty-state">No Steward agent selected.</div>
+                </div>
+              </article>
+              <article class="protocol-card">
+                <div class="protocol-card-head">
+                  <h3>Policies</h3>
+                  <span class="babylon-card-kicker">Default deny</span>
+                </div>
+                <div id="steward-policies" class="protocol-summary-list">
+                  <div class="empty-state">No Steward policies loaded.</div>
+                </div>
+              </article>
+              <article class="protocol-card">
+                <div class="protocol-card-head">
+                  <h3>Pending approvals</h3>
+                  <span class="babylon-card-kicker">Review queue</span>
+                </div>
+                <div id="steward-approvals" class="babylon-list">
+                  <div class="empty-state">No Steward approvals waiting.</div>
+                </div>
+              </article>
+              <article class="protocol-card">
+                <div class="protocol-card-head">
+                  <h3>Recent transactions</h3>
+                  <span class="babylon-card-kicker">Vault history</span>
+                </div>
+                <div id="steward-transactions" class="babylon-list">
+                  <div class="empty-state">No Steward transaction history loaded.</div>
+                </div>
+              </article>
+              <article class="protocol-card">
+                <div class="protocol-card-head">
+                  <h3>Token balances</h3>
+                  <span class="babylon-card-kicker">Tracked assets</span>
+                </div>
+                <div id="steward-tokens" class="protocol-summary-list">
+                  <div class="empty-state">No Steward token balances loaded.</div>
+                </div>
+              </article>
+              <article class="protocol-card">
+                <div class="protocol-card-head">
+                  <h3>Webhook events</h3>
+                  <span class="babylon-card-kicker">Compat feed</span>
+                </div>
+                <div id="steward-webhooks" class="babylon-list">
+                  <div class="empty-state">No Steward webhook events available.</div>
+                </div>
+              </article>
+            </div>
+            <form id="steward-create-form" class="protocol-form protocol-card steward-create-form">
+              <div class="protocol-card-head">
+                <h3>Create Steward agent</h3>
+                <span class="babylon-card-kicker">Wallet bootstrap</span>
+              </div>
+              <p id="steward-create-summary" class="babylon-create-summary">Set `STEWARD_API_URL` and `STEWARD_API_KEY` to create Steward agents from Cartridge.</p>
+              <div class="babylon-create-grid">
+                <label class="broadcast-field">
+                  <span class="broadcast-field-label">Agent ID</span>
+                  <input type="text" id="steward-create-id" class="broadcast-input" placeholder="cartridge-steward-agent" autocomplete="off" />
+                </label>
+                <label class="broadcast-field">
+                  <span class="broadcast-field-label">Name</span>
+                  <input type="text" id="steward-create-name" class="broadcast-input" placeholder="Cartridge Steward Agent" autocomplete="off" />
+                </label>
+                <label class="broadcast-field">
+                  <span class="broadcast-field-label">Platform ID</span>
+                  <input type="text" id="steward-create-platform-id" class="broadcast-input" placeholder="cartridge" autocomplete="off" />
+                </label>
+                <label class="broadcast-field">
+                  <span class="broadcast-field-label">Token expiry</span>
+                  <input type="text" id="steward-create-expires-in" class="broadcast-input" placeholder="30d" autocomplete="off" />
+                </label>
+              </div>
+              <div class="protocol-workbench-actions">
+                <button type="submit" id="steward-create" class="btn-primary">Create agent</button>
+              </div>
+              <pre id="steward-create-result" class="babylon-create-result empty-state">New Steward agent credentials will appear here.</pre>
+            </form>
+          </section>
+          <section id="protocol-workbench" class="protocol-workbench glass-panel" aria-label="Protocol workbench">
+            <div class="protocol-workbench-head">
+              <div class="protocol-workbench-copy">
+                <p class="stream-stage-eyebrow">Protocol console</p>
+                <h2 class="protocol-workbench-title">A2A, x402, and ERC-8004</h2>
+                <p id="protocol-workbench-summary" class="protocol-workbench-summary">Protocol diagnostics will appear here.</p>
+              </div>
+              <div class="protocol-workbench-actions">
+                <button type="button" id="protocol-refresh" class="btn-secondary">Refresh</button>
+              </div>
+            </div>
+            <div id="protocol-workbench-chips" class="chips"></div>
+            <div class="protocol-grid">
+              <article class="protocol-card">
+                <div class="protocol-card-head">
+                  <h3>A2A discovery</h3>
+                  <span class="babylon-card-kicker">Agent card</span>
+                </div>
+                <div id="protocol-a2a-summary" class="protocol-summary-list">
+                  <div class="empty-state">No A2A agent card loaded.</div>
+                </div>
+              </article>
+              <article class="protocol-card">
+                <div class="protocol-card-head">
+                  <h3>ERC-8004 identity</h3>
+                  <span class="babylon-card-kicker">Reputation path</span>
+                </div>
+                <div id="protocol-identity-summary" class="protocol-summary-list">
+                  <div class="empty-state">No ERC-8004 identity configured.</div>
+                </div>
+              </article>
+            </div>
+            <div class="protocol-grid protocol-grid-forms">
+              <form id="protocol-a2a-form" class="protocol-form protocol-card">
+                <div class="protocol-card-head">
+                  <h3>Call A2A endpoint</h3>
+                  <span class="babylon-card-kicker">JSON-RPC</span>
+                </div>
+                <div class="babylon-create-grid">
+                  <label class="broadcast-field babylon-create-field-wide">
+                    <span class="broadcast-field-label">Agent card URL</span>
+                    <input type="url" id="protocol-a2a-card-url" class="broadcast-input" placeholder="https://babylon.market/.well-known/agent-card.json" autocomplete="off" />
+                  </label>
+                  <label class="broadcast-field">
+                    <span class="broadcast-field-label">Method</span>
+                    <input type="text" id="protocol-a2a-method" class="broadcast-input" placeholder="a2a.getBalance" autocomplete="off" />
+                  </label>
+                  <label class="broadcast-field">
+                    <span class="broadcast-field-label">Params JSON</span>
+                    <textarea id="protocol-a2a-params" class="broadcast-input protocol-textarea" spellcheck="false" placeholder="{}"></textarea>
+                  </label>
+                </div>
+                <div class="protocol-workbench-actions">
+                  <button type="submit" id="protocol-a2a-send" class="btn-primary">Call A2A</button>
+                </div>
+                <pre id="protocol-a2a-result" class="babylon-create-result empty-state">A2A responses will appear here.</pre>
+              </form>
+              <form id="protocol-x402-form" class="protocol-form protocol-card">
+                <div class="protocol-card-head">
+                  <h3>Probe x402 endpoint</h3>
+                  <span class="babylon-card-kicker">HTTP 402</span>
+                </div>
+                <div class="babylon-create-grid">
+                  <label class="broadcast-field babylon-create-field-wide">
+                    <span class="broadcast-field-label">Endpoint URL</span>
+                    <input type="url" id="protocol-x402-url" class="broadcast-input" placeholder="https://example.com/paid-route" autocomplete="off" />
+                  </label>
+                  <label class="broadcast-field">
+                    <span class="broadcast-field-label">Method</span>
+                    <select id="protocol-x402-method" class="broadcast-input">
+                      <option value="GET">GET</option>
+                      <option value="POST">POST</option>
+                    </select>
+                  </label>
+                  <label class="broadcast-field">
+                    <span class="broadcast-field-label">Headers JSON</span>
+                    <textarea id="protocol-x402-headers" class="broadcast-input protocol-textarea" spellcheck="false" placeholder="{}"></textarea>
+                  </label>
+                  <label class="broadcast-field babylon-create-field-wide">
+                    <span class="broadcast-field-label">Body JSON</span>
+                    <textarea id="protocol-x402-body" class="broadcast-input protocol-textarea" spellcheck="false" placeholder="{}"></textarea>
+                  </label>
+                </div>
+                <div class="protocol-workbench-actions">
+                  <button type="submit" id="protocol-x402-probe" class="btn-primary">Probe x402</button>
+                </div>
+                <pre id="protocol-x402-result" class="babylon-create-result empty-state">Decoded x402 headers and body preview will appear here.</pre>
+              </form>
+            </div>
+          </section>
           <div class="store-toolbar-row store-toolbar-minimal">
             <span class="app-store-search-wrap" aria-hidden="true">
               <svg class="app-store-search-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

@@ -1,28 +1,55 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { OnboardingOverlay } from "./onboarding.tsx";
+import type { RuntimeShellState } from "../shared/runtime-shell-state";
 
-const STORAGE_KEY = "cartridge.onboarding.dismissed.v1";
+let root: ReturnType<typeof createRoot> | null = null;
+let hostEl: HTMLElement | null = null;
+let latestState: RuntimeShellState | null = null;
+let dismissed = false;
 
-export function mountOnboarding(): void {
-	const el = document.getElementById("onboarding-root");
-	if (!el) {
+function renderOverlay(): void {
+	if (!root || !hostEl || dismissed) {
 		return;
 	}
-	if (localStorage.getItem(STORAGE_KEY) === "1") {
-		el.remove();
-		return;
-	}
-	const root = createRoot(el);
 	root.render(
 		<StrictMode>
-			<OnboardingOverlay
-				onDismiss={() => {
-					localStorage.setItem(STORAGE_KEY, "1");
-					root.unmount();
-					el.remove();
-				}}
-			/>
+			<OnboardingOverlay state={latestState} onDismiss={dismissOnboarding} />
 		</StrictMode>,
 	);
+}
+
+function dismissOnboarding(): void {
+	dismissed = true;
+	root?.unmount();
+	hostEl?.remove();
+	root = null;
+	hostEl = null;
+}
+
+function ensureRoot(): boolean {
+	if (dismissed) {
+		return false;
+	}
+	hostEl ??= document.getElementById("onboarding-root");
+	if (!hostEl) {
+		return false;
+	}
+	root ??= createRoot(hostEl);
+	return true;
+}
+
+export function mountOnboarding(): void {
+	if (!ensureRoot()) {
+		return;
+	}
+	renderOverlay();
+}
+
+export function updateOnboarding(state: RuntimeShellState): void {
+	latestState = state;
+	if (!ensureRoot()) {
+		return;
+	}
+	renderOverlay();
 }

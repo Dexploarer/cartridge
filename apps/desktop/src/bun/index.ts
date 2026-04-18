@@ -1,8 +1,20 @@
 import {
 	CartridgeRuntime,
+	type BroadcastAudioBus,
+	type BroadcastPermissionState,
+	type BroadcastVideoProfile,
 	type RuntimeState,
 } from "@cartridge/runtime";
-import { type GameSessionRecord, type Persona } from "@cartridge/shared";
+import {
+	type AppendTelemetryInput,
+	type GameSessionRecord,
+	type OperatorCommand,
+	type OperatorCommandPayload,
+	type Persona,
+	type SurfaceControlTransport,
+	type SurfaceTakeoverState,
+	type WorkspaceViewDescriptor,
+} from "@cartridge/shared";
 import { parseCartridgeDeepLink } from "./cartridge-deep-link";
 import Electrobun, {
 	ApplicationMenu,
@@ -23,26 +35,87 @@ import {
 	installNativePlatformLayer,
 	isAllowedExternalUrl,
 } from "./native-platform";
+import {
+	CartridgeBroadcasterSupervisor,
+	maybeRunBroadcasterSidecar,
+	type BroadcasterEvent,
+} from "./broadcast-sidecar";
+import { readHostDiagnostics } from "./host-diagnostics";
+import {
+	getLocalSurfaceDevConfig,
+	getSurfaceWorkspaceVisualFitMode,
+} from "./local-surface-config";
+import { LocalSurfaceRunner } from "./local-surface-runner";
+import {
+	createBabylonAgent,
+	dispatchSurfaceControlCommand,
+	getBabylonOperatorSnapshot,
+	refreshSurfaceSessionTelemetry,
+	resolveSurfaceWorkspace,
+} from "./surface-control-adapter";
+import {
+	callA2AEndpoint,
+	getProtocolWorkbenchSnapshot,
+	probeX402Endpoint,
+} from "./protocol-workbench";
+import {
+	createStewardAgent,
+	getStewardWorkbenchSnapshot,
+	resolveStewardApprovalAction,
+} from "./steward-workbench";
+import { SurfaceConnectionMonitor } from "./surface-connection-monitor";
+import type {
+	BabylonAgentCreationInput,
+	BabylonAgentCreationResult,
+	BabylonOperatorSnapshot,
+	ProtocolA2ARequestInput,
+	ProtocolA2ARequestResult,
+	ProtocolWorkbenchSnapshot,
+	ProtocolX402ProbeInput,
+	ProtocolWorkbenchX402Snapshot,
+	RuntimeShellState,
+	StewardAgentCreationInput,
+	StewardAgentCreationResult,
+	StewardApprovalActionInput,
+	StewardApprovalActionResult,
+	StewardWorkbenchSnapshot,
+	SurfaceConnectionState,
+	WorkspaceWindowInfo,
+} from "../shared/runtime-shell-state";
+
+if (await maybeRunBroadcasterSidecar()) {
+	process.exit(0);
+}
 
 const childWindows = new Map<number, BrowserWindow>();
 const childSessionIds = new Map<number, string>();
+const childWindowKinds = new Map<number, "workspace" | "broadcast-output">();
 let nextChildId = 1;
 const runtime = new CartridgeRuntime();
+const broadcaster = new CartridgeBroadcasterSupervisor({
+	onEvent: (event) => {
+		handleBroadcasterEvent(event);
+		broadcastRuntimeState();
+	},
+	onError: (error) => {
+		runtime.setBroadcastStatus({
+			status: "error",
+			lastError: error.message,
+			logs: [error.message],
+		});
+		broadcastRuntimeState();
+	},
+});
+const localSurfaceRunner = new LocalSurfaceRunner();
+const surfaceConnections = new SurfaceConnectionMonitor({
+	onChange: () => {
+		broadcastRuntimeState();
+	},
+});
+let broadcastStreamKey: string | null = null;
+let broadcastWindowId: number | null = null;
 
 type WindowFrame = { x: number; y: number; width: number; height: number };
-
-type WorkspaceWindowInfo = {
-	id: number;
-	title: string;
-	appId: string;
-	sessionId: string;
-	persona: Persona;
-	status: GameSessionRecord["status"];
-};
-
-type RuntimeShellState = RuntimeState & {
-	workspaces: WorkspaceWindowInfo[];
-};
 
 type RpcMessageMap = Record<string, object>;
 
@@ -101,6 +174,38 @@ type MainWindowRPC = {
 				params: {};
 				response: RuntimeShellState;
 			};
+			getBabylonOperatorSnapshot: {
+				params: {};
+				response: BabylonOperatorSnapshot;
+			};
+			getProtocolWorkbenchSnapshot: {
+				params: {};
+				response: ProtocolWorkbenchSnapshot;
+			};
+			getStewardWorkbenchSnapshot: {
+				params: {};
+				response: StewardWorkbenchSnapshot;
+			};
+			createBabylonAgent: {
+				params: BabylonAgentCreationInput;
+				response: BabylonAgentCreationResult;
+			};
+			createStewardAgent: {
+				params: StewardAgentCreationInput;
+				response: StewardAgentCreationResult;
+			};
+			callA2AEndpoint: {
+				params: ProtocolA2ARequestInput;
+				response: ProtocolA2ARequestResult;
+			};
+			probeX402Endpoint: {
+				params: ProtocolX402ProbeInput;
+				response: ProtocolWorkbenchX402Snapshot;
+			};
+			resolveStewardApprovalAction: {
+				params: StewardApprovalActionInput;
+				response: StewardApprovalActionResult;
+			};
 			sendToChild: {
 				params: { id: number; message: string };
 				response: { success: boolean };
@@ -124,6 +229,44 @@ type MainWindowRPC = {
 			refreshAiPlane: {
 				params: {};
 				response: { success: boolean };
+			};
+			requestBroadcastPermissions: {
+				params: {};
+				response: { success: boolean; permissions: BroadcastPermissionState };
+			};
+			updateBroadcastConfig: {
+				params: {
+					enabled?: boolean;
+					destinationUrl?: string;
+					streamKey?: string | null;
+					videoProfile?: Partial<BroadcastVideoProfile>;
+				};
+				response: { success: boolean };
+			};
+			startBroadcast: {
+				params: {};
+				response: { success: boolean; reason?: string };
+			};
+			stopBroadcast: {
+				params: {};
+				response: { success: boolean };
+			};
+			setBroadcastAudioBus: {
+				params: {
+					bus: BroadcastAudioBus;
+					enabled?: boolean;
+					muted?: boolean;
+					gainPct?: number;
+				};
+				response: { success: boolean };
+			};
+			revealBroadcastWindow: {
+				params: {};
+				response: { success: boolean };
+			};
+			readBroadcastLogs: {
+				params: {};
+				response: { lines: string[] };
 			};
 			launchInShell: {
 				params: { appId: string; persona: Persona; splitPlay?: boolean };
@@ -177,6 +320,33 @@ type ChildWindowRPC = {
 				params: { id: number; message: string };
 				response: { success: boolean };
 			};
+			executeControl: {
+				params: {
+					sessionId: string;
+					control: string;
+					payload?: OperatorCommandPayload;
+					note?: string;
+				};
+				response:
+					| { success: true; commandId: string }
+					| { success: false; error: string };
+			};
+			reportControlResult: {
+				params: {
+					sessionId: string;
+					commandId: string;
+					status: "executed" | "failed";
+					result?: string;
+				};
+				response: { success: boolean };
+			};
+			reportTelemetry: {
+				params: {
+					sessionId: string;
+					frames: AppendTelemetryInput;
+				};
+				response: { success: boolean };
+			};
 		};
 		messages: {};
 	}>;
@@ -193,9 +363,9 @@ type ChildWindowRPC = {
 				capabilities: string[];
 				personas: string[];
 			};
-			setGameEmbed: {
-				embedUrl: string;
-				splitPlay: boolean;
+			setGameViews: {
+				agentView: WorkspaceViewDescriptor;
+				userView: WorkspaceViewDescriptor | null;
 				visualFitMode?: "none" | "topBand";
 			};
 			setSessionInfo: {
@@ -209,17 +379,27 @@ type ChildWindowRPC = {
 				threadTitle: string;
 				screenTitle: string;
 				liveStreams: string[];
+				streamScene: string | null;
+				streamCaptureMode: "standard" | "immersive";
+				takeoverState: SurfaceTakeoverState;
+				controlTransport: SurfaceControlTransport | null;
+			};
+			dispatchOperatorCommand: {
+				sessionId: string;
+				commandId: string;
+				control: string;
+				payload: OperatorCommandPayload;
 			};
 		};
 	}>;
 };
 
 const mainRPC = BrowserView.defineRPC<MainWindowRPC>({
-	maxRequestTime: 45000,
+	maxRequestTime: 180000,
 	handlers: {
 		requests: {
-			openChildWindow: ({ appId, persona, title, pip }) =>
-				openWorkspaceWindowForSurface({
+			openChildWindow: async ({ appId, persona, title, pip }) =>
+				launchWorkspaceWindowForSurface({
 					appId,
 					persona,
 					launchedFrom: "desktop-main",
@@ -236,6 +416,61 @@ const mainRPC = BrowserView.defineRPC<MainWindowRPC>({
 				return { success: true };
 			},
 			getRuntimeState: () => getRuntimeShellState(),
+			getBabylonOperatorSnapshot: async () =>
+				getBabylonOperatorSnapshot({
+					launchUrl: runtime.getSurface("babylon")?.launchUrl ?? null,
+				}),
+			getProtocolWorkbenchSnapshot: async () => getProtocolWorkbenchSnapshot(),
+			getStewardWorkbenchSnapshot: async () => getStewardWorkbenchSnapshot(),
+			createBabylonAgent: async (params) => {
+				const result = await createBabylonAgent({
+					request: params,
+					launchUrl: runtime.getSurface("babylon")?.launchUrl ?? null,
+				});
+				sendMainFeedMessage("Babylon", `Registered ${result.agentId}.`);
+				return result;
+			},
+			createStewardAgent: async (params) => {
+				const result = await createStewardAgent({
+					request: params,
+				});
+				sendMainFeedMessage("Steward", `Created ${result.agentId}.`);
+				return result;
+			},
+			callA2AEndpoint: async (params) => {
+				const result = await callA2AEndpoint({
+					request: params,
+				});
+				sendMainFeedMessage(
+					"A2A",
+					result.status === "ok"
+						? `Completed ${params.method} against ${result.endpointUrl ?? "unknown endpoint"}.`
+						: `A2A request failed: ${result.detail}`,
+				);
+				return result;
+			},
+			probeX402Endpoint: async (params) => {
+				const result = await probeX402Endpoint(params);
+				sendMainFeedMessage(
+					"x402",
+					result.status === "payment-required"
+						? `Payment challenge discovered at ${params.url}.`
+						: result.status === "ready"
+							? `Endpoint ${params.url} responded without a payment challenge.`
+							: `Probe status: ${result.detail}`,
+				);
+				return result;
+			},
+			resolveStewardApprovalAction: async (params) => {
+				const result = await resolveStewardApprovalAction({
+					request: params,
+				});
+				sendMainFeedMessage(
+					"Steward",
+					result.detail,
+				);
+				return result;
+			},
 			sendToChild: ({ id, message }) => {
 				const child = childWindows.get(id);
 				if (!child) {
@@ -293,8 +528,60 @@ const mainRPC = BrowserView.defineRPC<MainWindowRPC>({
 				broadcastRuntimeState();
 				return { success: true };
 			},
-			launchInShell: ({ appId, persona, splitPlay }) => {
-				const { sessionId } = openWorkspaceWindowForSurface({
+			requestBroadcastPermissions: () => {
+				broadcaster.requestPermissions();
+				runtime.setBroadcastStatus({
+					status: "permissions_required",
+					logs: ["Requesting broadcast permissions from sidecar."],
+				});
+				broadcastRuntimeState();
+				return {
+					success: true,
+					permissions: runtime.getRuntimeState().broadcast.permissions,
+				};
+			},
+			updateBroadcastConfig: ({ enabled, destinationUrl, streamKey, videoProfile }) => {
+				if (streamKey !== undefined) {
+					broadcastStreamKey = streamKey?.trim() || null;
+				}
+				runtime.updateBroadcastConfig({
+					enabled,
+					destinationUrl,
+					streamKeyRef: maskStreamKey(broadcastStreamKey),
+					videoProfile,
+				});
+				broadcaster.updateConfig(runtime.getRuntimeState().broadcast.config);
+				broadcastRuntimeState();
+				return { success: true };
+			},
+			startBroadcast: () => {
+				const result = startBroadcastFlow();
+				broadcastRuntimeState();
+				return result;
+			},
+			stopBroadcast: () => {
+				stopBroadcastFlow();
+				broadcastRuntimeState();
+				return { success: true };
+			},
+				setBroadcastAudioBus: ({ bus, enabled, muted, gainPct }) => {
+					runtime.setBroadcastAudioBus(bus, { enabled, muted, gainPct });
+					const next = runtime.getRuntimeState().broadcast.config.audioBuses[bus];
+					broadcaster.setAudioBus(bus, next);
+					broadcastRuntimeState();
+					return { success: true };
+				},
+				revealBroadcastWindow: () => {
+					const success = ensureBroadcastWindowVisible();
+					broadcaster.revealWindow();
+					broadcastRuntimeState();
+					return { success };
+				},
+			readBroadcastLogs: () => ({
+				lines: broadcaster.readLogs(),
+			}),
+			launchInShell: async ({ appId, persona, splitPlay }) => {
+				const { sessionId } = await launchWorkspaceWindowForSurface({
 					appId,
 					persona,
 					launchedFrom: "desktop-main",
@@ -408,6 +695,8 @@ function nativePlatformContext() {
 installCartridgeElectrobunIntegration(mainWindow);
 
 runtime.boot();
+broadcaster.updateConfig(runtime.getRuntimeState().broadcast.config);
+syncBroadcastSource();
 void runtime.refreshDataPlaneFromApis().then(() => {
 	broadcastRuntimeState();
 });
@@ -417,24 +706,41 @@ void runtime
 		broadcastRuntimeState();
 	});
 runtime.subscribe("app.session.started", () => {
+	syncBroadcastSource();
 	broadcastRuntimeState();
 });
 runtime.subscribe("app.session.updated", () => {
+	syncBroadcastSource();
 	broadcastRuntimeState();
 });
 runtime.subscribe("app.session.ended", () => {
+	syncBroadcastSource();
 	broadcastRuntimeState();
+});
+runtime.subscribe("operator.command.enqueued", ({ sessionId, appId, command }) => {
+	void handleOperatorCommandDispatch(sessionId, appId, command);
 });
 
 mainWindow.webview.on("dom-ready", () => {
 	broadcastRuntimeState();
 });
 
+process.once("exit", () => {
+	localSurfaceRunner.dispose();
+});
+
 function createChildWindow(
 	id: number,
 	session: GameSessionRecord,
 	title: string,
-	opts?: { pip?: boolean; splitPlay?: boolean },
+	opts?: {
+		pip?: boolean;
+		kind?: "workspace" | "broadcast-output";
+		views?: {
+			agentView: WorkspaceViewDescriptor;
+			userView: WorkspaceViewDescriptor | null;
+		};
+	},
 ) {
 	const surface = runtime.getSurface(session.appId);
 	if (!surface) {
@@ -472,10 +778,40 @@ function createChildWindow(
 					}
 
 				const targetRpc = target.webview.rpc as RpcBridge<ChildWindowRPC["webview"]["messages"]> | undefined;
-				targetRpc?.send?.receiveMessage?.({
-					from: surface.displayName,
-					message,
-				});
+					targetRpc?.send?.receiveMessage?.({
+						from: surface.displayName,
+						message,
+					});
+					return { success: true };
+				},
+				executeControl: ({ sessionId, control, payload, note }) => {
+					try {
+						const command = runtime.enqueueOperatorCommand(sessionId, {
+							control,
+							payload,
+							note,
+						});
+						return {
+							success: true,
+							commandId: command.commandId,
+						};
+					} catch (error) {
+						return {
+							success: false,
+							error: formatLaunchError(error),
+						};
+					}
+				},
+				reportControlResult: ({ sessionId, commandId, status, result }) => {
+					runtime.markCommandResolved(sessionId, {
+						commandId,
+						status,
+						result,
+					});
+					return { success: true };
+				},
+				reportTelemetry: ({ sessionId, frames }) => {
+					runtime.appendTelemetry(sessionId, frames);
 					return { success: true };
 				},
 			},
@@ -499,14 +835,22 @@ function createChildWindow(
 
 	childWindows.set(id, child);
 	childSessionIds.set(id, session.sessionId);
+	childWindowKinds.set(id, opts?.kind ?? "workspace");
 
 	applyCartridgeNavigationRules(child.webview);
 
 	child.webview.on("dom-ready", () => {
-		const rawUrl = surface.launchUrl?.trim() ?? "";
-		const embedUrl = rawUrl.length > 0 ? rawUrl : "about:blank";
-		const splitPlay = opts?.splitPlay === true;
-		const visualFitMode = surface.appId === "scape" ? "topBand" : "none";
+		const views = opts?.views ?? {
+			agentView: {
+				role: "agent",
+				label: "Agent pane",
+				url: surface.launchUrl?.trim() || "about:blank",
+				controlMode: "watch-only",
+				capturePriority: "primary",
+			},
+			userView: null,
+		};
+		const visualFitMode = getSurfaceWorkspaceVisualFitMode(surface.appId);
 		const childRpc = child.webview.rpc as RpcBridge<ChildWindowRPC["webview"]["messages"]> | undefined;
 		childRpc?.send?.setWindowInfo?.({ id, title });
 		childRpc?.send?.setSurfaceInfo?.({
@@ -517,9 +861,9 @@ function createChildWindow(
 			capabilities: surface.capabilities,
 			personas: surface.personas,
 		});
-		childRpc?.send?.setGameEmbed?.({
-			embedUrl,
-			splitPlay,
+		childRpc?.send?.setGameViews?.({
+			agentView: views.agentView,
+			userView: views.userView,
 			visualFitMode,
 		});
 		refreshChildWindowState(id);
@@ -529,15 +873,20 @@ function createChildWindow(
 
 	child.on("close", () => {
 		const liveSession = getSessionForWindow(id);
-		if (liveSession && liveSession.status !== "ended") {
+		const kind = childWindowKinds.get(id) ?? "workspace";
+		if (kind === "workspace" && liveSession && liveSession.status !== "ended") {
 			runtime.endSession(
 				liveSession.sessionId,
 				`${surface.displayName} workspace closed`,
 			);
 		}
+		if (broadcastWindowId === id) {
+			broadcastWindowId = null;
+		}
 
 		childWindows.delete(id);
 		childSessionIds.delete(id);
+		childWindowKinds.delete(id);
 		sendMainFeedMessage("System", `${surface.displayName} window closed.`);
 		broadcastRuntimeState();
 	});
@@ -551,18 +900,34 @@ function openWorkspaceWindowForSurface(params: {
 	pip?: boolean;
 	splitPlay?: boolean;
 	operatorNote?: string;
+	launchUrlOverride?: string;
 }): { id: number; sessionId: string } {
 	runtime.clearShellEmbed();
 	const surface = runtime.getSurface(params.appId);
 	if (!surface) {
 		throw new Error(`Unknown surface: ${params.appId}`);
 	}
+	const workspace = resolveSurfaceWorkspace({
+		surface,
+		persona: params.persona,
+		splitPlay: params.splitPlay === true,
+		launchUrl: params.launchUrlOverride ?? surface.launchUrl,
+	});
 	const session = runtime.launchSurface({
 		appId: params.appId,
 		persona: params.persona,
 		launchedFrom: params.launchedFrom,
 		viewer: "native-window",
+		launchUrlOverride: workspace.launchUrlOverride ?? params.launchUrlOverride,
 	});
+	runtime.setSessionTakeoverState(session.sessionId, workspace.takeoverState);
+	if (workspace.sessionNote) {
+		runtime.addSessionNote(session.sessionId, workspace.sessionNote);
+		sendMainFeedMessage(
+			"Surface Control",
+			`${surface.displayName}: ${workspace.sessionNote}`,
+		);
+	}
 	const id = nextChildId++;
 	let winTitle =
 		params.title && params.title.trim().length > 0
@@ -573,12 +938,16 @@ function openWorkspaceWindowForSurface(params: {
 	}
 	createChildWindow(id, session, winTitle, {
 		pip: params.pip === true,
-		splitPlay: params.splitPlay === true,
+		kind: "workspace",
+		views: {
+			agentView: workspace.agentView,
+			userView: workspace.userView,
+		},
 	});
 	const note =
 		params.operatorNote ??
 		(params.splitPlay
-			? `Workspace ${id} opened (split: open another window or use OS tiling for side-by-side).`
+			? `Workspace ${id} opened with coordinated agent and user panes.`
 			: `Window ${id} opened for ${surface.displayName}.`);
 	runtime.sendChatMessage({
 		appId: params.appId,
@@ -598,31 +967,240 @@ function openWorkspaceWindowForSurface(params: {
 	return { id, sessionId: session.sessionId };
 }
 
+function maskStreamKey(value: string | null): string | null {
+	if (!value) {
+		return null;
+	}
+	const tail = value.slice(-4);
+	return `key••••${tail}`;
+}
+
+function hasGrantedBroadcastPermissions(
+	permissions: BroadcastPermissionState,
+): boolean {
+	return (
+		permissions.screen === "granted" &&
+		permissions.systemAudio === "granted" &&
+		permissions.microphone === "granted"
+	);
+}
+
+function openBroadcastWindowForSession(sessionId: string): boolean {
+	const state = runtime.getRuntimeState();
+	const session = state.sessions.find((entry) => entry.sessionId === sessionId);
+	if (!session) {
+		return false;
+	}
+	if (broadcastWindowId && childWindows.has(broadcastWindowId)) {
+		if (childSessionIds.get(broadcastWindowId) !== sessionId) {
+			closeBroadcastWindow();
+		} else {
+		childWindows.get(broadcastWindowId)?.focus();
+		return true;
+		}
+	}
+	const surface = runtime.getSurface(session.appId);
+	if (!surface) {
+		return false;
+	}
+	const id = nextChildId++;
+	broadcastWindowId = id;
+	createChildWindow(id, session, `${surface.displayName} · Broadcast`, {
+		kind: "broadcast-output",
+	});
+	sendMainFeedMessage("System", `Broadcast output opened for ${surface.displayName}.`);
+	return true;
+}
+
+function ensureBroadcastWindowVisible(): boolean {
+	const source = runtime.getRuntimeState().broadcast.source;
+	if (!source.sessionId) {
+		return false;
+	}
+	if (broadcastWindowId && childWindows.has(broadcastWindowId)) {
+		childWindows.get(broadcastWindowId)?.focus();
+		return true;
+	}
+	return openBroadcastWindowForSession(source.sessionId);
+}
+
+function closeBroadcastWindow(): void {
+	if (!broadcastWindowId) {
+		return;
+	}
+	const child = childWindows.get(broadcastWindowId);
+	broadcastWindowId = null;
+	child?.close();
+}
+
+function startBroadcastFlow(): { success: boolean; reason?: string } {
+	const state = runtime.getRuntimeState();
+	const { config, permissions, source } = state.broadcast;
+	if (!hasGrantedBroadcastPermissions(permissions)) {
+		runtime.setBroadcastStatus({
+			status: "permissions_required",
+			lastError: "Broadcast permissions are required before going live.",
+			logs: ["Broadcast start blocked by missing permissions."],
+		});
+		return { success: false, reason: "permissions_required" };
+	}
+	if (!source.sessionId) {
+		runtime.setBroadcastStatus({
+			status: "idle",
+			lastError: "No active agent gameplay session is available for broadcast.",
+			logs: ["Broadcast start blocked by missing source session."],
+		});
+		return { success: false, reason: "no_source" };
+	}
+	if (!config.destinationUrl.trim()) {
+		runtime.setBroadcastStatus({
+			status: "error",
+			lastError: "A custom RTMP destination URL is required.",
+			logs: ["Broadcast start blocked by missing RTMP destination URL."],
+		});
+		return { success: false, reason: "missing_destination" };
+	}
+	if (!broadcastStreamKey) {
+		runtime.setBroadcastStatus({
+			status: "error",
+			lastError: "A stream key is required.",
+			logs: ["Broadcast start blocked by missing stream key."],
+		});
+		return { success: false, reason: "missing_stream_key" };
+	}
+	runtime.updateBroadcastConfig({
+		enabled: true,
+		streamKeyRef: maskStreamKey(broadcastStreamKey),
+	});
+	runtime.setBroadcastStatus({
+		status: "starting",
+		lastError: null,
+		logs: ["Starting broadcast output."],
+	});
+	ensureBroadcastWindowVisible();
+	const next = runtime.getRuntimeState().broadcast;
+	broadcaster.updateConfig(next.config);
+	broadcaster.setSource(next.source);
+	broadcaster.start(next.config, next.source, broadcastStreamKey);
+	return { success: true };
+}
+
+function stopBroadcastFlow(note = "Stopping broadcast output."): void {
+	runtime.updateBroadcastConfig({ enabled: false });
+	runtime.setBroadcastStatus({
+		status: "stopping",
+		lastError: null,
+		logs: [note],
+	});
+	broadcaster.stop();
+	closeBroadcastWindow();
+}
+
+function syncBroadcastSource(): void {
+	const state = runtime.getRuntimeState();
+	broadcaster.setSource(state.broadcast.source);
+	if (
+		(state.broadcast.status === "live" || state.broadcast.status === "starting") &&
+		state.broadcast.source.sessionId === null
+	) {
+		stopBroadcastFlow("Broadcast source disappeared; stopping output.");
+		return;
+	}
+	if (state.broadcast.status === "live" && state.broadcast.source.sessionId) {
+		ensureBroadcastWindowVisible();
+	}
+}
+
+function handleBroadcasterEvent(event: BroadcasterEvent): void {
+	const currentStatus = runtime.getRuntimeState().broadcast.status;
+	switch (event.type) {
+		case "ready":
+			runtime.setBroadcastStatus({
+				status: currentStatus,
+				logs: [event.log],
+			});
+			break;
+		case "permissions":
+			runtime.setBroadcastPermissions(event.permissions);
+			runtime.setBroadcastStatus({
+				status: hasGrantedBroadcastPermissions(event.permissions)
+					? currentStatus
+					: "permissions_required",
+				logs: event.log ? [event.log] : [],
+			});
+			break;
+		case "status":
+			runtime.setBroadcastStatus({
+				status: event.status,
+				lastError: event.lastError ?? null,
+				logs: event.log ? [event.log] : [],
+			});
+			if (event.status === "live") {
+				ensureBroadcastWindowVisible();
+			}
+			if (event.status === "idle") {
+				closeBroadcastWindow();
+			}
+			break;
+		case "stats":
+			runtime.setBroadcastStatus({
+				status: currentStatus,
+				health: event.health,
+			});
+			break;
+		case "logs":
+			runtime.setBroadcastStatus({
+				status: currentStatus,
+				logs: event.lines,
+			});
+			break;
+		case "source":
+			runtime.setBroadcastStatus({
+				status: currentStatus,
+				logs: event.log ? [event.log] : [],
+			});
+			if (runtime.getRuntimeState().broadcast.status === "live") {
+				ensureBroadcastWindowVisible();
+			}
+			break;
+	}
+}
+
 function handleNativeContextMenuSurface(kind: string, appId: string, persona: Persona): void {
 	const surface = runtime.getSurface(appId);
 	if (!surface) {
 		return;
 	}
 	if (kind === "shell") {
-		openWorkspaceWindowForSurface({ appId, persona, launchedFrom: "native-context-menu" });
+		void launchWorkspaceWindowForSurface({
+			appId,
+			persona,
+			launchedFrom: "native-context-menu",
+		}).catch((error) => {
+			reportSurfaceLaunchError(appId, error);
+		});
 		return;
 	}
 	if (kind === "split") {
-		openWorkspaceWindowForSurface({
+		void launchWorkspaceWindowForSurface({
 			appId,
 			persona,
 			launchedFrom: "native-context-menu",
 			splitPlay: true,
+		}).catch((error) => {
+			reportSurfaceLaunchError(appId, error);
 		});
 		return;
 	}
 	if (kind === "window" || kind === "pip") {
-		openWorkspaceWindowForSurface({
+		void launchWorkspaceWindowForSurface({
 			appId,
 			persona,
 			launchedFrom: "native-context-menu",
 			title: surface.displayName,
 			pip: kind === "pip",
+		}).catch((error) => {
+			reportSurfaceLaunchError(appId, error);
 		});
 	}
 }
@@ -642,11 +1220,17 @@ Electrobun.events.on("context-menu-clicked", (evt) => {
 });
 
 function getRuntimeShellState(): RuntimeShellState {
+	const state = runtime.getRuntimeState();
+	const connectionStates: SurfaceConnectionState[] = surfaceConnections.snapshotFor(
+		state.surfaces,
+	);
 	return {
-		...runtime.getRuntimeState(),
+		...state,
 		workspaces: [...childWindows.keys()]
-			.map((id) => getWorkspaceWindowInfo(id))
+			.map((id) => getWorkspaceWindowInfo(id, state))
 			.filter((workspace): workspace is WorkspaceWindowInfo => workspace !== null),
+		host: readHostDiagnostics(),
+		surfaceConnections: connectionStates,
 	};
 }
 
@@ -698,9 +1282,26 @@ function buildChildSessionInfo(
 	const liveStreams = state.streams
 		.filter(
 			(destination) =>
-				destination.appId === session.appId && destination.status !== "offline",
+				destination.sessionId === session.sessionId &&
+				destination.status !== "offline",
 		)
 		.map((destination) => `${destination.label} · ${destination.status}`);
+	const leadStream =
+		state.streams.find(
+			(destination) =>
+				destination.sessionId === session.sessionId && destination.status === "live",
+		) ??
+		state.streams.find(
+			(destination) =>
+				destination.sessionId === session.sessionId && destination.status === "standby",
+		) ??
+		null;
+	const takeoverState =
+		leadStream?.takeoverState ??
+		screen?.takeoverState ??
+		(session.persona === "user-gamer" ? "user-takeover" : "agent-active");
+	const controlTransport =
+		runtime.getSurface(session.appId)?.workspace?.controlTransport ?? null;
 
 	return {
 		sessionId: session.sessionId,
@@ -713,6 +1314,10 @@ function buildChildSessionInfo(
 		threadTitle: thread?.title ?? "Ops Bridge",
 		screenTitle: screen?.title ?? session.displayName,
 		liveStreams,
+		streamScene: leadStream?.scene ?? null,
+		streamCaptureMode: leadStream?.captureMode ?? "standard",
+		takeoverState,
+		controlTransport,
 	};
 }
 
@@ -729,6 +1334,85 @@ function refreshChildWindowState(id: number, state = getRuntimeShellState()) {
 	);
 }
 
+function dispatchOperatorCommandToSession(
+	sessionId: string,
+	command: {
+		commandId: string;
+		control: string;
+		payload: OperatorCommandPayload;
+	},
+): boolean {
+	let dispatched = false;
+	for (const [id, child] of childWindows.entries()) {
+		if (childSessionIds.get(id) !== sessionId) {
+			continue;
+		}
+		if ((childWindowKinds.get(id) ?? "workspace") !== "workspace") {
+			continue;
+		}
+		const childRpc = child.webview.rpc as RpcBridge<
+			ChildWindowRPC["webview"]["messages"]
+		> | undefined;
+		childRpc?.send?.dispatchOperatorCommand?.({
+			sessionId,
+			commandId: command.commandId,
+			control: command.control,
+			payload: command.payload,
+		});
+		dispatched = true;
+	}
+	return dispatched;
+}
+
+async function handleOperatorCommandDispatch(
+	sessionId: string,
+	appId: string,
+	command: OperatorCommand,
+): Promise<void> {
+	const state = runtime.getRuntimeState();
+	const session =
+		state.sessions.find((entry) => entry.sessionId === sessionId) ?? null;
+	const surface = runtime.getSurface(appId);
+	if (!session || !surface) {
+		return;
+	}
+
+	if (surface.appId === "kinema") {
+		const dispatched = dispatchOperatorCommandToSession(sessionId, command);
+		if (!dispatched) {
+			runtime.markCommandResolved(sessionId, {
+				commandId: command.commandId,
+				status: "failed",
+				result: "No Kinema workspace is connected to receive the control command.",
+			});
+		}
+		return;
+	}
+
+	const result = await dispatchSurfaceControlCommand({
+		surface,
+		session,
+		command,
+	});
+	if (result.frames && result.frames.length > 0) {
+		runtime.appendTelemetry(sessionId, result.frames);
+	}
+	if (result.takeoverState) {
+		runtime.setSessionTakeoverState(sessionId, result.takeoverState);
+	}
+	if (result.sessionNote) {
+		runtime.addSessionNote(sessionId, result.sessionNote);
+	}
+	runtime.markCommandResolved(sessionId, {
+		commandId: command.commandId,
+		status: result.status,
+		result: result.result,
+	});
+	if (result.status === "failed") {
+		sendMainFeedMessage("Surface Control", `${surface.displayName}: ${result.result}`);
+	}
+}
+
 function broadcastRuntimeState() {
 	const state = getRuntimeShellState();
 	syncMainWindowActivityTitle(state);
@@ -742,6 +1426,82 @@ function broadcastRuntimeState() {
 function sendMainFeedMessage(from: string, message: string) {
 	const mainRpc = mainWindow.webview.rpc as RpcBridge<MainWindowRPC["webview"]["messages"]> | undefined;
 	mainRpc?.send?.receiveMessage?.({ from, message });
+}
+
+function formatLaunchError(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+	return String(error);
+}
+
+function reportSurfaceLaunchError(appId: string, error: unknown): void {
+	const surface = runtime.getSurface(appId);
+	const label = surface?.displayName ?? appId;
+	const body = formatLaunchError(error);
+	surfaceConnections.noteLaunchFailure(appId, body);
+	sendMainFeedMessage("Local Surface", `${label} launch failed: ${body}`);
+	Utils.showNotification({
+		title: "Cartridge",
+		subtitle: `${label} launch failed`,
+		body,
+		silent: true,
+	});
+}
+
+async function ensureSurfaceReadyForLaunch(appId: string): Promise<void> {
+	const config = getLocalSurfaceDevConfig(appId);
+	if (config) {
+		surfaceConnections.noteLaunchStart(
+			appId,
+			`Preparing ${config.displayName} local install/build/dev flow.`,
+		);
+	}
+	await localSurfaceRunner.ensureSurfaceReady(appId, sendMainFeedMessage);
+	if (config) {
+		surfaceConnections.noteLaunchReady(
+			appId,
+			`${config.displayName} ready at ${config.readyUrl}`,
+		);
+	}
+}
+
+async function launchWorkspaceWindowForSurface(params: {
+	appId: string;
+	persona: Persona;
+	launchedFrom: string;
+	title?: string;
+	pip?: boolean;
+	splitPlay?: boolean;
+	operatorNote?: string;
+	launchUrlOverride?: string;
+}): Promise<{ id: number; sessionId: string }> {
+	await ensureSurfaceReadyForLaunch(params.appId);
+	const launched = openWorkspaceWindowForSurface(params);
+	const state = runtime.getRuntimeState();
+	const session =
+		state.sessions.find((entry) => entry.sessionId === launched.sessionId) ?? null;
+	const surface = runtime.getSurface(params.appId);
+	if (session && surface && surface.appId !== "kinema") {
+		try {
+			const frames = await refreshSurfaceSessionTelemetry({ surface, session });
+			if (frames.length > 0) {
+				runtime.appendTelemetry(session.sessionId, frames);
+			}
+		} catch (error) {
+			const message = formatLaunchError(error);
+			runtime.addSessionNote(
+				session.sessionId,
+				`${surface.displayName} telemetry sync degraded: ${message}`,
+			);
+			sendMainFeedMessage(
+				"Surface Control",
+				`${surface.displayName} telemetry sync degraded: ${message}`,
+			);
+		}
+	}
+	broadcastRuntimeState();
+	return launched;
 }
 
 function sendShellNavigate(tabOrMsg: string | ShellNavigateMessage): void {
@@ -778,7 +1538,7 @@ function setWebviewZoom(win: BrowserWindow, mode: "in" | "out" | "reset"): void 
 	win.webview.setPageZoom(nextZoom);
 }
 
-function applyCartridgeDeepLink(href: string): void {
+async function applyCartridgeDeepLink(href: string): Promise<void> {
 	const parsed = parseCartridgeDeepLink(href);
 	if (!parsed) {
 		sendMainFeedMessage("Deep link", `Unsupported URL: ${href}`);
@@ -818,14 +1578,14 @@ function applyCartridgeDeepLink(href: string): void {
 
 	const deepNote = `Opened from deep link (${parsed.mode}).`;
 	if (parsed.mode === "shell") {
-		openWorkspaceWindowForSurface({
+		await launchWorkspaceWindowForSurface({
 			appId: parsed.appId,
 			persona,
 			launchedFrom: "deep-link",
 			operatorNote: deepNote,
 		});
 	} else if (parsed.mode === "split") {
-		openWorkspaceWindowForSurface({
+		await launchWorkspaceWindowForSurface({
 			appId: parsed.appId,
 			persona,
 			launchedFrom: "deep-link",
@@ -833,7 +1593,7 @@ function applyCartridgeDeepLink(href: string): void {
 			operatorNote: deepNote,
 		});
 	} else {
-		openWorkspaceWindowForSurface({
+		await launchWorkspaceWindowForSurface({
 			appId: parsed.appId,
 			persona,
 			launchedFrom: "deep-link",
@@ -970,7 +1730,9 @@ function installCartridgeElectrobunIntegration(win: BrowserWindow): void {
 	Electrobun.events.on("open-url", (evt) => {
 		const url = (evt as OpenUrlEvent).data?.url;
 		if (typeof url === "string") {
-			applyCartridgeDeepLink(url);
+			void applyCartridgeDeepLink(url).catch((error) => {
+				sendMainFeedMessage("Deep link", `Launch failed: ${formatLaunchError(error)}`);
+			});
 		}
 	});
 

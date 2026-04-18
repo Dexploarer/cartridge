@@ -11,6 +11,44 @@ export type SessionMode =
 	| "operator-dashboard"
 	| "view-only";
 
+export type SurfaceControlTransport =
+	| "session-route"
+	| "browser-bridge"
+	| "local-bridge"
+	| "hybrid";
+
+export type SurfaceUserInputMode = "supported" | "watch-only" | "takeover";
+
+export type WorkspaceViewRole = "agent" | "user";
+
+export type WorkspaceViewControlMode =
+	| "agent-controlled"
+	| "user-controlled"
+	| "watch-only";
+
+export type WorkspaceCapturePriority = "primary" | "secondary";
+
+export type SurfaceTakeoverState =
+	| "agent-active"
+	| "user-observing"
+	| "user-takeover"
+	| "handoff-pending";
+
+export type SurfaceWorkspaceCapabilities = {
+	controlTransport: SurfaceControlTransport;
+	supportsDualView: boolean;
+	supportsTakeover: boolean;
+	userInput: SurfaceUserInputMode;
+};
+
+export type WorkspaceViewDescriptor = {
+	role: WorkspaceViewRole;
+	label: string;
+	url: string;
+	controlMode: WorkspaceViewControlMode;
+	capturePriority: WorkspaceCapturePriority;
+};
+
 export type BrandingProfile = {
 	brandId: string;
 	appName: string;
@@ -48,6 +86,7 @@ export type GameAppManifest = {
 	summary: string;
 	capabilities: string[];
 	personas: Persona[];
+	workspace?: SurfaceWorkspaceCapabilities;
 	session: {
 		mode: SessionMode;
 		features: string[];
@@ -56,7 +95,7 @@ export type GameAppManifest = {
 
 export type GameSessionManifest = Pick<
 	GameAppManifest,
-	"launchType" | "capabilities" | "packageName"
+	"launchType" | "launchUrl" | "capabilities" | "packageName"
 >;
 
 export type AppCatalogSummary = {
@@ -165,6 +204,7 @@ export type SessionLaunchInput = {
 	launchedFrom: string;
 	viewer?: SessionViewer;
 	suggestionSeed?: string[];
+	launchUrlOverride?: string | null;
 };
 
 export type KnowledgeDocument = {

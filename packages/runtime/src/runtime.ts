@@ -10,6 +10,9 @@ import {
 	type GameAppManifest,
 	type Persona,
 	type SessionLaunchInput,
+	type SurfaceTakeoverState,
+	type WorkspaceViewDescriptor,
+	type WorkspaceViewRole,
 } from "@cartridge/shared";
 import {
 	appendTrimmedHistory,
@@ -46,6 +49,22 @@ type AgentStatus =
 	| "watching";
 type StreamStatus = "live" | "standby" | "offline";
 type PiPScreenState = "live" | "watching" | "idle";
+export type BroadcastStatus =
+	| "idle"
+	| "permissions_required"
+	| "starting"
+	| "live"
+	| "reconnecting"
+	| "degraded"
+	| "error"
+	| "stopping";
+export type BroadcastPermissionGate =
+	| "required"
+	| "granted"
+	| "denied"
+	| "unavailable";
+export type BroadcastAudioBus = "app" | "system" | "mic";
+export type BroadcastRole = "none" | "source" | "preview";
 
 type RuntimeConfig = {
 	runtimeId: string;
@@ -134,6 +153,75 @@ export type StreamDestinationState = {
 	scene: string;
 	outputLabel: string;
 	viewerCount: number;
+	sourcePersona: Persona | null;
+	sourceViewer: GameSessionRecord["viewer"] | null;
+	sourceViewRole: WorkspaceViewRole | null;
+	captureMode: "standard" | "immersive";
+	takeoverState: SurfaceTakeoverState | null;
+};
+
+export type AudioBusConfig = {
+	enabled: boolean;
+	muted: boolean;
+	gainPct: number;
+};
+
+export type BroadcastVideoProfile = {
+	width: number;
+	height: number;
+	fps: number;
+	videoBitrateKbps: number;
+	audioBitrateKbps: number;
+	videoCodec: "h264";
+	audioCodec: "aac";
+};
+
+export type BroadcastConfig = {
+	enabled: boolean;
+	destinationUrl: string;
+	streamKeyRef: string | null;
+	videoProfile: BroadcastVideoProfile;
+	audioBuses: Record<BroadcastAudioBus, AudioBusConfig>;
+};
+
+export type BroadcastPermissionState = {
+	screen: BroadcastPermissionGate;
+	systemAudio: BroadcastPermissionGate;
+	microphone: BroadcastPermissionGate;
+};
+
+export type BroadcastSource = {
+	appId: string | null;
+	sessionId: string | null;
+	displayName: string | null;
+	persona: Persona | null;
+	viewer: GameSessionRecord["viewer"] | null;
+	viewRole: WorkspaceViewRole | null;
+	captureMode: "standard" | "immersive";
+	broadcastRole: BroadcastRole;
+	takeoverState: SurfaceTakeoverState | null;
+	scene: string;
+	outputLabel: string;
+};
+
+export type BroadcastHealth = {
+	fps: number;
+	bitrateKbps: number;
+	droppedFrames: number;
+	reconnectCount: number;
+	encoderLagMs: number;
+	publishUptimeSec: number;
+};
+
+export type BroadcastState = {
+	status: BroadcastStatus;
+	config: BroadcastConfig;
+	permissions: BroadcastPermissionState;
+	source: BroadcastSource;
+	health: BroadcastHealth;
+	lastError: string | null;
+	lastEventAt: string | null;
+	recentLogs: string[];
 };
 
 export type PiPScreen = {
@@ -145,21 +233,26 @@ export type PiPScreen = {
 	appId: string | null;
 	sessionId: string | null;
 	focus: string;
+	liveViewRole: WorkspaceViewRole | null;
+	takeoverState: SurfaceTakeoverState | null;
 	metrics: Array<{ label: string; value: string }>;
 };
 
-	type ShellEmbedState = {
+type ShellEmbedState = {
 	sessionId: string;
 	appId: string;
 	displayName: string;
-	embedUrl: string;
 	persona: Persona;
 	splitPlay: boolean;
+	takeoverState: SurfaceTakeoverState;
+	agentView: WorkspaceViewDescriptor;
+	userView: WorkspaceViewDescriptor | null;
 };
 
 export type RuntimeState = {
 	runtime: RuntimeSnapshot;
 	catalog: AppCatalogSummary;
+	surfaces: GameAppManifest[];
 	sessions: GameSessionRecord[];
 	agents: AgentProfile[];
 	chatThreads: ChatThread[];
@@ -169,6 +262,7 @@ export type RuntimeState = {
 	knowledge: KnowledgeDocument[];
 	dataStores: DataStoreRecord[];
 	aiPlane: AiPlaneState;
+	broadcast: BroadcastState;
 	shellEmbed: ShellEmbedState | null;
 };
 
@@ -207,10 +301,76 @@ const DEFAULT_STREAMING_DESTINATIONS = [
 	"custom-rtmp",
 ];
 const DEFAULT_EMBEDDING_MODEL = "cartridge-text-embed-v3";
+const MAX_BROADCAST_LOGS = 40;
 const MAX_THREAD_MESSAGES = 32;
 const OPS_THREAD_ID = "ops-bridge";
 const STREAM_THREAD_ID = "stream-control";
 const PRIMARY_GAME_APP_IDS = new Set(PRIMARY_GAME_APPS.map((app) => app.appId));
+
+function createDefaultBroadcastVideoProfile(): BroadcastVideoProfile {
+	return {
+		width: 1920,
+		height: 1080,
+		fps: 60,
+		videoBitrateKbps: 8000,
+		audioBitrateKbps: 160,
+		videoCodec: "h264",
+		audioCodec: "aac",
+	};
+}
+
+function createDefaultAudioBuses(): Record<BroadcastAudioBus, AudioBusConfig> {
+	return {
+		app: { enabled: true, muted: false, gainPct: 100 },
+		system: { enabled: true, muted: false, gainPct: 100 },
+		mic: { enabled: true, muted: false, gainPct: 100 },
+	};
+}
+
+function createDefaultBroadcastPermissions(): BroadcastPermissionState {
+	return {
+		screen: "required",
+		systemAudio: "required",
+		microphone: "required",
+	};
+}
+
+function createDefaultBroadcastHealth(): BroadcastHealth {
+	return {
+		fps: 0,
+		bitrateKbps: 0,
+		droppedFrames: 0,
+		reconnectCount: 0,
+		encoderLagMs: 0,
+		publishUptimeSec: 0,
+	};
+}
+
+function createDefaultBroadcastConfig(): BroadcastConfig {
+	return {
+		enabled: false,
+		destinationUrl: "",
+		streamKeyRef: null,
+		videoProfile: createDefaultBroadcastVideoProfile(),
+		audioBuses: createDefaultAudioBuses(),
+	};
+}
+
+function createIdleBroadcastSource(): BroadcastSource {
+	return {
+		appId: null,
+		sessionId: null,
+		displayName: null,
+		persona: null,
+		viewer: null,
+		viewRole: null,
+		captureMode: "standard",
+		broadcastRole: "none",
+		takeoverState: null,
+		scene: "Idle Watch Scene",
+		outputLabel: "Waiting for source",
+	};
+}
 
 const BASE_AGENT_SEEDS: AgentSeed[] = [
 	{
@@ -241,6 +401,16 @@ const BASE_AGENT_SEEDS: AgentSeed[] = [
 		capabilities: ["lane-control", "tactics", "command-queue"],
 	},
 	{
+		agentId: "hyperscape-host",
+		displayName: "Hyperscape Host",
+		persona: "agent-gamer",
+		role: "Hyperscape live session host",
+		homeAppId: "hyperscape",
+		idleSummary:
+			"Standing by to attach to a Hyperscape embedded agent and steer the live session.",
+		capabilities: ["embedded-agents", "follow-target", "pause-resume"],
+	},
+	{
 		agentId: "scape-runner",
 		displayName: "Scape Runner",
 		persona: "agent-gamer",
@@ -248,6 +418,15 @@ const BASE_AGENT_SEEDS: AgentSeed[] = [
 		homeAppId: "scape",
 		idleSummary: "Maintaining idle loop state for long-form Scape runs.",
 		capabilities: ["autonomy-loop", "journaling", "operator-steering"],
+	},
+	{
+		agentId: "kinema-pilot",
+		displayName: "Kinema Pilot",
+		persona: "agent-gamer",
+		role: "Kinema gameplay lab pilot",
+		homeAppId: "kinema",
+		idleSummary: "Standing by to drive Kinema sessions, stations, and editor play-tests.",
+		capabilities: ["third-person", "editor-routing", "render-debug"],
 	},
 	{
 		agentId: "swarm-forge",
@@ -407,6 +586,30 @@ function latestSessionByAppId(
 	);
 }
 
+function pickStreamLeadSession(
+	sessions: GameSessionRecord[],
+): GameSessionRecord | null {
+	const activeSessions = sessions.filter((session) => session.status !== "ended");
+	return (
+		activeSessions.find(
+			(session) => session.persona === "agent-gamer" && isPrimaryGameApp(session.appId),
+		) ?? null
+	);
+}
+
+function defaultTakeoverState(
+	persona: Persona,
+	splitPlay: boolean,
+): SurfaceTakeoverState {
+	if (persona === "user-gamer") {
+		return "user-takeover";
+	}
+	if (splitPlay) {
+		return "user-observing";
+	}
+	return "agent-active";
+}
+
 function latestSessionMetric(
 	session: GameSessionRecord,
 	index: number,
@@ -465,6 +668,19 @@ export class CartridgeRuntime {
 	private aiProbeAggregateError: string | null = null;
 	private shellEmbedSessionId: string | null = null;
 	private shellEmbedSplitPlay = false;
+	private shellEmbedViews = new Map<
+		string,
+		{ agentView: WorkspaceViewDescriptor; userView: WorkspaceViewDescriptor | null }
+	>();
+	private sessionTakeoverStates = new Map<string, SurfaceTakeoverState>();
+	private broadcastConfig: BroadcastConfig = createDefaultBroadcastConfig();
+	private broadcastStatus: BroadcastStatus = "idle";
+	private broadcastPermissions: BroadcastPermissionState =
+		createDefaultBroadcastPermissions();
+	private broadcastHealth: BroadcastHealth = createDefaultBroadcastHealth();
+	private broadcastLastError: string | null = null;
+	private broadcastLastEventAt: string | null = null;
+	private broadcastLogs: string[] = [];
 
 	constructor(overrides: Partial<RuntimeConfig> = {}) {
 		this.config = resolveRuntimeConfig(overrides);
@@ -564,6 +780,133 @@ export class CartridgeRuntime {
 		});
 	}
 
+	updateBroadcastConfig(input: {
+		enabled?: boolean;
+		destinationUrl?: string;
+		streamKeyRef?: string | null;
+		videoProfile?: Partial<BroadcastVideoProfile>;
+	}): BroadcastConfig {
+		this.broadcastConfig = {
+			...this.broadcastConfig,
+			enabled: input.enabled ?? this.broadcastConfig.enabled,
+			destinationUrl:
+				input.destinationUrl?.trim() ?? this.broadcastConfig.destinationUrl,
+			streamKeyRef:
+				input.streamKeyRef === undefined
+					? this.broadcastConfig.streamKeyRef
+					: input.streamKeyRef,
+			videoProfile: {
+				...this.broadcastConfig.videoProfile,
+				...(input.videoProfile ?? {}),
+			},
+		};
+		return clone(this.broadcastConfig);
+	}
+
+	setBroadcastAudioBus(
+		bus: BroadcastAudioBus,
+		input: Partial<AudioBusConfig>,
+	): Record<BroadcastAudioBus, AudioBusConfig> {
+		this.broadcastConfig = {
+			...this.broadcastConfig,
+			audioBuses: {
+				...this.broadcastConfig.audioBuses,
+				[bus]: {
+					...this.broadcastConfig.audioBuses[bus],
+					...input,
+				},
+			},
+		};
+		return clone(this.broadcastConfig.audioBuses);
+	}
+
+	setBroadcastPermissions(
+		input: Partial<BroadcastPermissionState>,
+	): BroadcastPermissionState {
+		this.broadcastPermissions = {
+			...this.broadcastPermissions,
+			...input,
+		};
+		this.broadcastLastEventAt = isoNow();
+		return clone(this.broadcastPermissions);
+	}
+
+	setBroadcastStatus(input: {
+		status: BroadcastStatus;
+		health?: Partial<BroadcastHealth>;
+		lastError?: string | null;
+		logs?: string[];
+	}): BroadcastStatus {
+		this.broadcastStatus = input.status;
+		this.broadcastHealth = {
+			...this.broadcastHealth,
+			...(input.health ?? {}),
+		};
+		if (input.lastError !== undefined) {
+			this.broadcastLastError = input.lastError;
+		}
+		if (input.logs && input.logs.length > 0) {
+			this.broadcastLogs = appendTrimmedHistory(
+				this.broadcastLogs,
+				input.logs,
+				MAX_BROADCAST_LOGS,
+			);
+		}
+		this.broadcastLastEventAt = isoNow();
+		return this.broadcastStatus;
+	}
+
+	getBroadcastLogs(): string[] {
+		return [...this.broadcastLogs];
+	}
+
+	private buildBroadcastState(
+		sessions: GameSessionRecord[],
+	): BroadcastState {
+		const sourceSession = pickStreamLeadSession(sessions);
+		const source: BroadcastSource = sourceSession
+			? {
+					appId: sourceSession.appId,
+					sessionId: sourceSession.sessionId,
+					displayName: sourceSession.displayName,
+					persona: sourceSession.persona,
+					viewer: sourceSession.viewer,
+					viewRole: "agent",
+					captureMode:
+						sourceSession.persona === "agent-gamer" &&
+						isPrimaryGameApp(sourceSession.appId)
+							? "immersive"
+							: "standard",
+					broadcastRole: "source",
+					takeoverState: this.getSessionTakeoverState(
+						sourceSession.sessionId,
+						sourceSession.persona,
+						false,
+					),
+					scene: `${sourceSession.displayName} Agent Screen`,
+					outputLabel: `${sourceSession.displayName} · agent fullscreen`,
+				}
+			: createIdleBroadcastSource();
+
+		return {
+			status:
+				sourceSession === null &&
+				(this.broadcastStatus === "live" ||
+					this.broadcastStatus === "starting" ||
+					this.broadcastStatus === "reconnecting" ||
+					this.broadcastStatus === "degraded")
+					? "idle"
+					: this.broadcastStatus,
+			config: clone(this.broadcastConfig),
+			permissions: clone(this.broadcastPermissions),
+			source,
+			health: clone(this.broadcastHealth),
+			lastError: this.broadcastLastError,
+			lastEventAt: this.broadcastLastEventAt,
+			recentLogs: [...this.broadcastLogs],
+		};
+	}
+
 	getRuntimeState(): RuntimeState {
 		const sessions = this.sessions.listSessions();
 		const connectors = this.buildConnectors();
@@ -578,6 +921,7 @@ export class CartridgeRuntime {
 		return {
 			runtime: this.getSnapshot(),
 			catalog: this.registry.getCatalogSummary(),
+			surfaces: this.listLaunchableSurfaces(),
 			sessions,
 			agents,
 			chatThreads,
@@ -587,6 +931,7 @@ export class CartridgeRuntime {
 			knowledge: this.buildKnowledgeIndex(sessions, agents),
 			dataStores: this.buildDataStores(),
 			aiPlane: this.buildAiPlane(),
+			broadcast: this.buildBroadcastState(sessions),
 			shellEmbed: this.buildShellEmbed(sessions),
 		};
 	}
@@ -597,32 +942,83 @@ export class CartridgeRuntime {
 		}
 		const session = sessions.find((s) => s.sessionId === this.shellEmbedSessionId);
 		if (!session || session.status === "ended") {
+			const staleId = this.shellEmbedSessionId;
 			this.shellEmbedSessionId = null;
 			this.shellEmbedSplitPlay = false;
+			if (staleId) {
+				this.shellEmbedViews.delete(staleId);
+				this.sessionTakeoverStates.delete(staleId);
+			}
 			return null;
 		}
-		const surface = this.getSurface(session.appId);
-		const embedUrl = surface?.launchUrl?.trim() || "about:blank";
+		const embedUrl = session.manifest.launchUrl?.trim() || "about:blank";
+		const views = this.shellEmbedViews.get(session.sessionId) ?? {
+			agentView: {
+				role: "agent",
+				label: "Agent view",
+				url: embedUrl,
+				controlMode:
+					session.persona === "user-gamer"
+						? "user-controlled"
+						: "agent-controlled",
+				capturePriority: "primary",
+			} satisfies WorkspaceViewDescriptor,
+			userView:
+				this.shellEmbedSplitPlay
+					? ({
+							role: "user",
+							label: "User view",
+							url: embedUrl,
+							controlMode: "watch-only",
+							capturePriority: "secondary",
+						} satisfies WorkspaceViewDescriptor)
+					: null,
+		};
 		return {
 			sessionId: session.sessionId,
 			appId: session.appId,
 			displayName: session.displayName,
-			embedUrl,
 			persona: session.persona,
 			splitPlay: this.shellEmbedSplitPlay,
+			takeoverState: this.getSessionTakeoverState(
+				session.sessionId,
+				session.persona,
+				this.shellEmbedSplitPlay,
+			),
+			agentView: clone(views.agentView),
+			userView: views.userView ? clone(views.userView) : null,
 		};
 	}
 
-		launchSurfaceInShell(input: {
-			appId: string;
-			persona: Persona;
-			splitPlay?: boolean;
-		}): GameSessionRecord {
+	private getSessionTakeoverState(
+		sessionId: string,
+		persona: Persona,
+		splitPlay: boolean,
+	): SurfaceTakeoverState {
+		return (
+			this.sessionTakeoverStates.get(sessionId) ??
+			defaultTakeoverState(persona, splitPlay)
+		);
+	}
+
+	launchSurfaceInShell(input: {
+		appId: string;
+		persona: Persona;
+		splitPlay?: boolean;
+		launchUrlOverride?: string | null;
+		views?: {
+			agentView: WorkspaceViewDescriptor;
+			userView: WorkspaceViewDescriptor | null;
+		};
+		takeoverState?: SurfaceTakeoverState;
+	}): GameSessionRecord {
 		this.boot();
 		if (this.shellEmbedSessionId) {
 			const prev = this.shellEmbedSessionId;
 			this.shellEmbedSessionId = null;
 			this.shellEmbedSplitPlay = false;
+			this.shellEmbedViews.delete(prev);
+			this.sessionTakeoverStates.delete(prev);
 			this.endSession(prev, "Replaced by new shell embed");
 		}
 		const session = this.launchSurface({
@@ -630,9 +1026,21 @@ export class CartridgeRuntime {
 			persona: input.persona,
 			launchedFrom: "desktop-main",
 			viewer: "embedded",
+			launchUrlOverride: input.launchUrlOverride,
 		});
 		this.shellEmbedSessionId = session.sessionId;
 		this.shellEmbedSplitPlay = input.splitPlay === true;
+		if (input.views) {
+			this.shellEmbedViews.set(session.sessionId, {
+				agentView: clone(input.views.agentView),
+				userView: input.views.userView ? clone(input.views.userView) : null,
+			});
+		}
+		this.sessionTakeoverStates.set(
+			session.sessionId,
+			input.takeoverState ??
+				defaultTakeoverState(session.persona, input.splitPlay === true),
+		);
 		return session;
 	}
 
@@ -643,6 +1051,8 @@ export class CartridgeRuntime {
 		const id = this.shellEmbedSessionId;
 		this.shellEmbedSessionId = null;
 		this.shellEmbedSplitPlay = false;
+		this.shellEmbedViews.delete(id);
+		this.sessionTakeoverStates.delete(id);
 		this.endSession(id, "Shell embed closed");
 	}
 
@@ -658,6 +1068,29 @@ export class CartridgeRuntime {
 
 	getOperatorSurface(appId: string) {
 		return this.registry.getOperatorSurface(appId);
+	}
+
+	setSessionTakeoverState(
+		sessionId: string,
+		takeoverState: SurfaceTakeoverState,
+		note?: string,
+	): GameSessionRecord {
+		this.sessionTakeoverStates.set(sessionId, takeoverState);
+		const session = this.sessions.getSession(sessionId);
+		if (!session) {
+			throw new Error(`Unknown session for takeover state: ${sessionId}`);
+		}
+		if (note) {
+			this.addSessionNote(sessionId, note);
+			this.sendChatMessage({
+				appId: session.appId,
+				sessionId,
+				author: "System",
+				body: note,
+				channel: "ops",
+			});
+		}
+		return this.sessions.getSession(sessionId) as GameSessionRecord;
 	}
 
 	getPreferredThreadId(appId: string | null): string {
@@ -735,6 +1168,8 @@ export class CartridgeRuntime {
 	endSession(sessionId: string, note?: string): GameSessionRecord {
 		const liveSession = this.sessions.getSession(sessionId);
 		const ended = this.sessions.endSession(sessionId, note);
+		this.sessionTakeoverStates.delete(sessionId);
+		this.shellEmbedViews.delete(sessionId);
 		if (liveSession) {
 			this.sendChatMessage({
 				appId: liveSession.appId,
@@ -860,13 +1295,7 @@ export class CartridgeRuntime {
 	private buildStreams(
 		sessions: GameSessionRecord[],
 	): StreamDestinationState[] {
-		const leadSession =
-			sessions.find(
-				(session) =>
-					session.status !== "ended" && isPrimaryGameApp(session.appId),
-			) ??
-			sessions.find((session) => session.status !== "ended") ??
-			null;
+		const leadSession = pickStreamLeadSession(sessions);
 
 		const streamingEnabled = this.config.featureFlags.streaming;
 
@@ -897,13 +1326,31 @@ export class CartridgeRuntime {
 				appId: leadSession?.appId ?? null,
 				sessionId: leadSession?.sessionId ?? null,
 				scene: leadSession
-					? `${leadSession.displayName} Watch`
+					? leadSession.persona === "agent-gamer"
+						? `${leadSession.displayName} Agent Screen`
+						: `${leadSession.displayName} Watch`
 					: "Idle Watch Scene",
 				outputLabel: leadSession
-					? `${leadSession.displayName} · ${leadSession.persona}`
+					? leadSession.persona === "agent-gamer"
+						? `${leadSession.displayName} · agent fullscreen`
+						: `${leadSession.displayName} · ${leadSession.persona}`
 					: "Waiting for source",
 				viewerCount:
 					status === "live" ? 140 + sessions.length * 16 + index * 11 : 0,
+				sourcePersona: leadSession?.persona ?? null,
+				sourceViewer: leadSession?.viewer ?? null,
+				sourceViewRole: leadSession ? "agent" : null,
+				captureMode:
+					leadSession?.persona === "agent-gamer" && isPrimaryGameApp(leadSession.appId)
+						? "immersive"
+						: "standard",
+				takeoverState: leadSession
+					? this.getSessionTakeoverState(
+							leadSession.sessionId,
+							leadSession.persona,
+							false,
+						)
+					: null,
 			} satisfies StreamDestinationState;
 		});
 	}
@@ -981,6 +1428,10 @@ export class CartridgeRuntime {
 				appId: app.appId,
 				sessionId: session?.sessionId ?? null,
 				focus: agent?.displayName ?? app.displayName,
+				liveViewRole: session ? "agent" : null,
+				takeoverState: session
+					? this.getSessionTakeoverState(session.sessionId, session.persona, false)
+					: null,
 				metrics: session
 					? [
 							latestSessionMetric(session, 0, "Status", session.status),
@@ -1020,6 +1471,8 @@ export class CartridgeRuntime {
 				appId: liveStream.appId,
 				sessionId: liveStream.sessionId,
 				focus: liveStream.label,
+				liveViewRole: liveStream.sourceViewRole,
+				takeoverState: liveStream.takeoverState,
 				metrics: [
 					{ label: "Scene", value: liveStream.scene },
 					{ label: "Output", value: liveStream.outputLabel },
@@ -1039,6 +1492,8 @@ export class CartridgeRuntime {
 				appId: "coding",
 				sessionId: codingSession.sessionId,
 				focus: "Swarm Forge",
+				liveViewRole: null,
+				takeoverState: null,
 				metrics: [
 					latestSessionMetric(codingSession, 0, "Tasks", "Routing"),
 					{

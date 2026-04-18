@@ -131,6 +131,7 @@ export class GameSessionManager {
 			notes: [`Session created from ${input.launchedFrom} for ${input.persona}`],
 			manifest: {
 				launchType: app.launchType,
+				launchUrl: input.launchUrlOverride ?? app.launchUrl,
 				capabilities: [...app.capabilities],
 				packageName: app.packageName,
 			},

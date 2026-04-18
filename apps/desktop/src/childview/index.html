@@ -9,7 +9,7 @@
   <body class="child-workspace">
     <div id="game-viewport" class="game-viewport" data-split="false" aria-label="Game viewport">
       <div class="game-pane game-pane-a">
-        <span class="game-pane-label">Surface</span>
+        <span id="game-pane-label-a" class="game-pane-label">Agent pane</span>
         <iframe
           id="game-frame-a"
           class="game-frame"
@@ -18,7 +18,7 @@
         ></iframe>
       </div>
       <div class="game-pane game-pane-b" hidden>
-        <span class="game-pane-label">Split</span>
+        <span id="game-pane-label-b" class="game-pane-label">User pane</span>
         <iframe
           id="game-frame-b"
           class="game-frame"
@@ -57,6 +57,27 @@
           <div id="session-controls" class="chips" style="margin-top: 10px"></div>
           <p id="session-route" class="muted" style="margin-top: 12px">Routing appears when the session is active.</p>
           <div id="session-streams" class="chips" style="margin-top: 8px"></div>
+        </section>
+
+        <section id="botsdk-panel" class="panel" hidden>
+          <h2>BotSDK</h2>
+          <p id="botsdk-summary" class="muted">
+            Waiting for the Kinema control bridge.
+          </p>
+          <div id="botsdk-telemetry" class="chips"></div>
+          <div id="botsdk-controls" class="control-grid" style="margin-top: 12px"></div>
+          <p class="muted" style="margin-top: 12px">
+            Commands from the main workspace can use
+            <code>/play</code>,
+            <code>/station vehicles</code>,
+            <code>/move forward 24</code>,
+            <code>/jump</code>,
+            <code>/interact 90</code>,
+            <code>/look -0.2 0.12</code>,
+            <code>/editor</code>,
+            <code>/graphics</code>,
+            or <code>/reset</code>.
+          </p>
         </section>
 
         <section class="panel grow">
