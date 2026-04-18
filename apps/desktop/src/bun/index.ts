@@ -44,6 +44,8 @@ import { readHostDiagnostics } from "./host-diagnostics";
 import {
 	getLocalSurfaceDevConfig,
 	getSurfaceWorkspaceVisualFitMode,
+	resolveLocalSurfaceLaunch,
+	shouldUseDirectSurfaceWindow,
 } from "./local-surface-config";
 import { LocalSurfaceRunner } from "./local-surface-runner";
 import {
@@ -736,6 +738,7 @@ function createChildWindow(
 	opts?: {
 		pip?: boolean;
 		kind?: "workspace" | "broadcast-output";
+		directUrl?: string | null;
 		views?: {
 			agentView: WorkspaceViewDescriptor;
 			userView: WorkspaceViewDescriptor | null;
@@ -748,6 +751,7 @@ function createChildWindow(
 	}
 
 	const pip = opts?.pip === true;
+	const directUrl = opts?.directUrl?.trim() || null;
 
 	const childRPC = BrowserView.defineRPC<ChildWindowRPC>({
 		maxRequestTime: 5000,
@@ -771,19 +775,21 @@ function createChildWindow(
 					broadcastRuntimeState();
 					return { success: true };
 				},
-				sendToChild: ({ id: targetId, message }) => {
-					const target = childWindows.get(targetId);
-					if (!target) {
-						return { success: false };
-					}
+					sendToChild: ({ id: targetId, message }) => {
+						const target = childWindows.get(targetId);
+						if (!target) {
+							return { success: false };
+						}
 
-				const targetRpc = target.webview.rpc as RpcBridge<ChildWindowRPC["webview"]["messages"]> | undefined;
-					targetRpc?.send?.receiveMessage?.({
-						from: surface.displayName,
-						message,
-					});
-					return { success: true };
-				},
+						const targetRpc = target.webview.rpc as RpcBridge<
+							ChildWindowRPC["webview"]["messages"]
+						> | undefined;
+						targetRpc?.send?.receiveMessage?.({
+							from: surface.displayName,
+							message,
+						});
+						return { success: true };
+					},
 				executeControl: ({ sessionId, control, payload, note }) => {
 					try {
 						const command = runtime.enqueueOperatorCommand(sessionId, {
@@ -824,7 +830,7 @@ function createChildWindow(
 
 	const child = new BrowserWindow({
 		title: pip ? `${title} · PIP` : title,
-		url: "views://childview/index.html",
+		url: directUrl ?? "views://childview/index.html",
 		rpc: childRPC,
 		frame,
 	});
@@ -840,6 +846,10 @@ function createChildWindow(
 	applyCartridgeNavigationRules(child.webview);
 
 	child.webview.on("dom-ready", () => {
+		if (directUrl) {
+			refreshChildWindowState(id);
+			return;
+		}
 		const views = opts?.views ?? {
 			agentView: {
 				role: "agent",
@@ -913,14 +923,32 @@ function openWorkspaceWindowForSurface(params: {
 		splitPlay: params.splitPlay === true,
 		launchUrl: params.launchUrlOverride ?? surface.launchUrl,
 	});
+	const directUrl = shouldUseDirectSurfaceWindow(params.appId)
+		? resolveLocalSurfaceLaunch(
+				params.appId,
+				params.persona,
+				params.launchUrlOverride ?? surface.launchUrl,
+			).embedUrl ??
+			params.launchUrlOverride ??
+			surface.launchUrl
+		: null;
 	const session = runtime.launchSurface({
 		appId: params.appId,
 		persona: params.persona,
 		launchedFrom: params.launchedFrom,
 		viewer: "native-window",
-		launchUrlOverride: workspace.launchUrlOverride ?? params.launchUrlOverride,
+		launchUrlOverride:
+			directUrl ?? workspace.launchUrlOverride ?? params.launchUrlOverride,
 	});
 	runtime.setSessionTakeoverState(session.sessionId, workspace.takeoverState);
+	if (directUrl) {
+		runtime.addSessionNote(
+			session.sessionId,
+			params.splitPlay
+				? `${surface.displayName} split view is unavailable in the embedded workspace, so Cartridge opened a direct native window instead.`
+				: `${surface.displayName} opened in a direct native window because the host blocks iframe embedding.`,
+		);
+	}
 	if (workspace.sessionNote) {
 		runtime.addSessionNote(session.sessionId, workspace.sessionNote);
 		sendMainFeedMessage(
@@ -933,12 +961,13 @@ function openWorkspaceWindowForSurface(params: {
 		params.title && params.title.trim().length > 0
 			? params.title
 			: `${surface.displayName} Workspace`;
-	if (params.splitPlay) {
+	if (params.splitPlay && !directUrl) {
 		winTitle = `${surface.displayName} · split`;
 	}
 	createChildWindow(id, session, winTitle, {
 		pip: params.pip === true,
 		kind: "workspace",
+		directUrl,
 		views: {
 			agentView: workspace.agentView,
 			userView: workspace.userView,

@@ -21,6 +21,12 @@ import {
 } from "@cartridge/shared";
 import Electrobun, { Electroview } from "electrobun/view";
 import { mountOnboarding, updateOnboarding } from "./onboarding-mount.tsx";
+import {
+	hasActiveSessionForApp,
+	normalizeShellTab,
+	shouldShowBabylonWallet,
+	type TabId,
+} from "./shell-navigation";
 import type {
 	BabylonAgentCreationInput,
 	BabylonAgentCreationResult,
@@ -199,16 +205,6 @@ type MainWindowRPC = {
 	};
 };
 
-type TabId = "chat" | "apps";
-
-function normalizeShellTab(raw: string): TabId {
-	const t = raw === "studio" ? "hub" : raw;
-	if (t === "apps" || t === "store") {
-		return "apps";
-	}
-	return "chat";
-}
-
 const rpc = Electroview.defineRPC<MainWindowRPC>({
 	maxRequestTime: 45000,
 	handlers: {
@@ -372,6 +368,7 @@ const els = {
 	elizaModelRail: document.getElementById("eliza-model-rail") as HTMLDivElement,
 	elizaRailHint: document.getElementById("eliza-rail-hint") as HTMLParagraphElement,
 	panelApps: document.getElementById("panel-apps") as HTMLElement,
+	panelStream: document.getElementById("panel-stream") as HTMLElement,
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -410,10 +407,11 @@ let activeThreadId: string | null = null;
 let appsSearchQuery = "";
 let appsActiveOnly = false;
 let chatThreadFilter: ChatThreadKind | "all" = "all";
+let activeTab: TabId = "chat";
 let streamTheaterMode = false;
 
-function isAppsTabVisible(): boolean {
-	return els.panelApps.hidden === false;
+function isWalletTabVisible(): boolean {
+	return activeTab === "wallet";
 }
 
 function formatBabylonMoney(value: number | null | undefined): string {
@@ -793,8 +791,9 @@ async function refreshProtocolWorkbench(force = false): Promise<void> {
 
 function renderBabylonWorkbench(snapshot: BabylonOperatorSnapshot | null): void {
 	const surface = getCatalogSurfaces(currentState).find((entry) => entry.appId === "babylon");
-	els.babylonWorkbench.hidden = !surface;
-	if (!surface) {
+	const visible = Boolean(surface) && shouldShowBabylonWallet(currentState);
+	els.babylonWorkbench.hidden = !visible;
+	if (!visible) {
 		return;
 	}
 	const effectiveSnapshot =
@@ -954,6 +953,10 @@ function renderBabylonWorkbench(snapshot: BabylonOperatorSnapshot | null): void 
 }
 
 async function refreshBabylonWorkbench(force = false): Promise<void> {
+	if (!shouldShowBabylonWallet(currentState)) {
+		els.babylonWorkbench.hidden = true;
+		return;
+	}
 	if (!force && babylonSnapshot && Date.now() - babylonLastFetchedAt < 20_000) {
 		renderBabylonWorkbench(babylonSnapshot);
 		return;
@@ -1614,9 +1617,6 @@ els.appsSearch.addEventListener("input", () => {
 
 els.appsRefresh.addEventListener("click", () => {
 	void hydrateRuntimeState();
-	void refreshBabylonWorkbench(true);
-	void refreshStewardWorkbench(true);
-	void refreshProtocolWorkbench(true);
 });
 
 els.appsActiveOnly.addEventListener("click", () => {
@@ -1951,7 +1951,6 @@ for (const [bus, inputs] of [
 
 function initTabs(): void {
 	const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".nav-rail-btn"));
-	const panels = Array.from(document.querySelectorAll<HTMLElement>(".tab-panel"));
 
 	for (const btn of buttons) {
 		btn.addEventListener("click", () => {
@@ -1959,21 +1958,13 @@ function initTabs(): void {
 			if (!tab) {
 				return;
 			}
-
-			for (const b of buttons) {
-				b.classList.toggle("is-active", b === btn);
-			}
-
-			for (const panel of panels) {
-				const match = panel.dataset["panel"] === tab;
-				panel.hidden = !match;
-				panel.classList.toggle("is-active", match);
-			}
+			switchToTab(tab);
 		});
 	}
 }
 
 function switchToTab(tab: TabId): void {
+	activeTab = tab;
 	const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".nav-rail-btn"));
 	const panels = Array.from(document.querySelectorAll<HTMLElement>(".tab-panel"));
 	for (const b of buttons) {
@@ -1984,10 +1975,14 @@ function switchToTab(tab: TabId): void {
 		panel.hidden = !match;
 		panel.classList.toggle("is-active", match);
 	}
-	if (tab === "apps") {
+	if (tab === "wallet") {
 		void refreshBabylonWorkbench();
 		void refreshStewardWorkbench();
 		void refreshProtocolWorkbench();
+	}
+	if (tab === "stream" && currentState) {
+		renderStreamStage(currentState);
+		renderBroadcastConsole(currentState.broadcast);
 	}
 }
 
@@ -2154,7 +2149,7 @@ function renderStudioDeck(state: RuntimeShellState): void {
 					<button type="button" class="btn-primary" data-studio-refresh-ai>Refresh AI plane</button>
 					<button type="button" class="btn-secondary" data-studio-nav="intelligence">Models &amp; Intel</button>
 					<button type="button" class="btn-secondary" data-studio-nav="connect">Agents</button>
-					<button type="button" class="btn-secondary" data-studio-nav="apps">Apps &amp; stage</button>
+					<button type="button" class="btn-secondary" data-studio-nav="apps">Store</button>
 					<button type="button" class="btn-secondary" data-studio-nav="chat">Chat</button>
 				</div>
 			</div>
@@ -2187,10 +2182,6 @@ function renderElizaModelRail(plane: AiPlaneState): void {
 		btn.dataset["elizaModel"] = id;
 		rail.appendChild(btn);
 	}
-}
-
-function hasActiveSessionForApp(state: RuntimeShellState, appId: string): boolean {
-	return state.sessions.some((s) => s.appId === appId && s.status !== "ended");
 }
 
 function renderAppsCatalog(): void {
@@ -2258,21 +2249,6 @@ function formatSurfaceConnectionStatus(
 	status: SurfaceConnectionState["status"],
 ): string {
 	return status.replace(/-/g, " ");
-}
-
-function formatSurfaceConnectionMode(
-	mode: SurfaceConnectionState["mode"],
-): string {
-	switch (mode) {
-		case "local-managed":
-			return "local managed";
-		case "local-url":
-			return "local url";
-		case "remote-url":
-			return "remote url";
-		default:
-			return "missing";
-	}
 }
 
 function iconGradientCss(appId: string): string {
@@ -2378,21 +2354,16 @@ function renderStoreFeatured(
 		card.innerHTML = `
 			<div class="store-hero-shine" aria-hidden="true"></div>
 			<div class="store-hero-body">
-				<span class="store-hero-eyebrow">${live ? "Playing now" : "Featured"} · ElizaOS-ready</span>
+				<span class="store-hero-eyebrow">${live ? "Live now" : "Launch ready"}</span>
 				<h3 class="store-hero-name">${escapeHtml(surface.displayName)}</h3>
 				<p class="store-hero-desc">${escapeHtml(surface.summary)}</p>
 				<div class="store-hero-meta">
 					<span class="store-hero-pill">${escapeHtml(surface.session.mode)}</span>
-					<span class="store-hero-pill muted">${escapeHtml(surface.category)}</span>
 					${connection ? `<span class="${connectionChipClass(connection.status)}">${escapeHtml(formatSurfaceConnectionStatus(connection.status))}</span>` : ""}
-					${connection ? `<span class="store-hero-pill muted">${escapeHtml(formatSurfaceConnectionMode(connection.mode))}</span>` : ""}
 				</div>
-				${connection ? `<p class="store-hero-desc">${escapeHtml(connection.detail)}</p>` : ""}
 				<div class="store-hero-actions">
 					<button type="button" class="store-pill-btn store-pill-btn-primary" data-action="shell">Open</button>
 					<button type="button" class="store-pill-btn store-pill-btn-ghost" data-action="shell-split">Split</button>
-					<button type="button" class="store-pill-btn store-pill-btn-ghost" data-action="popout">Window</button>
-					<button type="button" class="store-pill-btn store-pill-btn-ghost" data-action="pip">PIP</button>
 				</div>
 			</div>
 			<div class="store-hero-icon-wrap" aria-hidden="true">
@@ -2427,34 +2398,24 @@ function renderSurfaceGrid(
 		card.dataset["storeAppId"] = surface.appId;
 		card.dataset["storeDisplayName"] = surface.displayName;
 		card.dataset["storePackage"] = surface.packageName;
-		const capShort = surface.capabilities.slice(0, 2).join(" · ");
 		card.innerHTML = `
 			<div class="store-app-icon" style="background:${iconGradientCss(surface.appId)}" aria-hidden="true"></div>
 			<div class="store-app-info">
 				<div class="store-app-title-line">
 					<h4 class="store-app-name">${escapeHtml(surface.displayName)}</h4>
 					${live ? '<span class="store-live-dot" title="Active session"></span>' : ""}
+					${connection ? `<span class="${connectionChipClass(connection.status)}">${escapeHtml(formatSurfaceConnectionStatus(connection.status))}</span>` : ""}
 				</div>
 				<p class="store-app-subtitle">${escapeHtml(surface.summary)}</p>
-				<p class="store-app-publisher">${escapeHtml(surface.packageName)}</p>
-				${capShort ? `<p class="store-app-caps">${escapeHtml(capShort)}</p>` : ""}
 				${
-					connection
-						? `<div class="chips" style="margin-top:8px">
-							<span class="${connectionChipClass(connection.status)}">${escapeHtml(formatSurfaceConnectionStatus(connection.status))}</span>
-							<span class="chip">${escapeHtml(formatSurfaceConnectionMode(connection.mode))}</span>
-						</div>
-						<p class="store-app-caps">${escapeHtml(connection.detail)}</p>`
+					connection && connection.status !== "ready"
+						? `<p class="store-app-caps">${escapeHtml(connection.detail)}</p>`
 						: ""
 				}
 			</div>
 			<div class="store-app-cta">
 				<button type="button" class="store-pill-btn store-pill-btn-primary store-pill-compact" data-action="shell">Open</button>
-				<div class="store-app-more">
-					<button type="button" class="store-icon-btn" data-action="shell-split" title="Split play">◫</button>
-					<button type="button" class="store-icon-btn" data-action="popout" title="Workspace">▢</button>
-					<button type="button" class="store-icon-btn" data-action="pip" title="PIP">⬚</button>
-				</div>
+				<button type="button" class="store-pill-btn store-pill-btn-ghost store-pill-compact" data-action="shell-split">Split</button>
 			</div>
 		`;
 		attachSurfaceLaunchHandlers(card, surface, selectedPersona);
@@ -2474,7 +2435,7 @@ function renderStreamStage(state: RuntimeShellState): void {
 	const leadStream = getLeadStream(state.streams);
 	if (!leadStream || !leadStream.appId) {
 		streamTheaterMode = false;
-		els.panelApps.classList.remove("is-stream-theater");
+		els.panelStream.classList.remove("is-stream-theater");
 		els.streamStageShell.hidden = true;
 		els.streamStageFrame.src = "about:blank";
 		return;
@@ -2501,7 +2462,7 @@ function renderStreamStage(state: RuntimeShellState): void {
 	}
 
 	els.streamStageShell.hidden = false;
-	els.panelApps.classList.toggle("is-stream-theater", streamTheaterMode);
+	els.panelStream.classList.toggle("is-stream-theater", streamTheaterMode);
 	els.streamStageEyebrow.textContent = `${leadStream.label} · ${leadStream.status}`;
 	els.streamStageTitle.textContent = leadStream.scene;
 	els.streamStageSummary.textContent =
@@ -2634,14 +2595,21 @@ function renderRuntimeShellState(state: RuntimeShellState): void {
 	renderThreads(visibleThreads);
 	renderActiveThread();
 	renderWorkspaces(state.workspaces);
-	if (isAppsTabVisible() && (!babylonSnapshot || Date.now() - babylonLastFetchedAt > 30_000)) {
+	if (
+		isWalletTabVisible() &&
+		shouldShowBabylonWallet(state) &&
+		(!babylonSnapshot || Date.now() - babylonLastFetchedAt > 30_000)
+	) {
 		void refreshBabylonWorkbench();
 	}
-	if (isAppsTabVisible() && (!stewardSnapshot || Date.now() - stewardLastFetchedAt > 30_000)) {
+	if (
+		isWalletTabVisible() &&
+		(!stewardSnapshot || Date.now() - stewardLastFetchedAt > 30_000)
+	) {
 		void refreshStewardWorkbench();
 	}
 	if (
-		isAppsTabVisible() &&
+		isWalletTabVisible() &&
 		(!protocolSnapshot || Date.now() - protocolLastFetchedAt > 30_000)
 	) {
 		void refreshProtocolWorkbench();

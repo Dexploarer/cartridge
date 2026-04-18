@@ -1,4 +1,4 @@
-/* Cartridge — ultramodern dark glass + App Store–inspired Store */
+/* Cartridge — dark host shell with a minimal Store */
 
 :root {
 	--void: #030308;
@@ -17,8 +17,8 @@
 	--crimson-dim: #5c1018;
 	--accent: #c41e2a;
 	--accent-soft: rgba(196, 30, 42, 0.14);
-	--store-blue: #0a84ff;
-	--store-blue-glow: rgba(10, 132, 255, 0.35);
+	--store-blue: #b52a36;
+	--store-blue-glow: rgba(196, 30, 42, 0.28);
 	--success: #3d9a6a;
 	--warn: #c9a227;
 	--danger: #c41e2a;
@@ -274,11 +274,11 @@ code {
 
 .nav-rail-btn.is-active {
 	color: var(--text);
-	background: linear-gradient(135deg, rgba(196, 30, 42, 0.2), rgba(10, 132, 255, 0.08));
+	background: linear-gradient(135deg, rgba(196, 30, 42, 0.22), rgba(91, 16, 24, 0.22));
 	border-color: rgba(255, 255, 255, 0.12);
 	box-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.08),
-		0 0 24px rgba(10, 132, 255, 0.08);
+		0 0 24px rgba(196, 30, 42, 0.16);
 }
 
 .nav-rail-ico {
@@ -511,8 +511,8 @@ code {
 
 .apps-search-input.app-store-search:focus {
 	outline: none;
-	border-color: rgba(10, 132, 255, 0.45);
-	box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.12);
+	border-color: rgba(196, 30, 42, 0.45);
+	box-shadow: 0 0 0 3px rgba(196, 30, 42, 0.14);
 }
 
 .apps-search-input.app-store-search::placeholder {
@@ -568,13 +568,13 @@ code {
 
 @keyframes store-app-highlight-pulse {
 	0% {
-		box-shadow: 0 0 0 0 rgba(10, 132, 255, 0.55);
+		box-shadow: 0 0 0 0 rgba(196, 30, 42, 0.48);
 	}
 	40% {
-		box-shadow: 0 0 0 6px rgba(10, 132, 255, 0.12);
+		box-shadow: 0 0 0 6px rgba(196, 30, 42, 0.12);
 	}
 	100% {
-		box-shadow: 0 0 0 0 rgba(10, 132, 255, 0);
+		box-shadow: 0 0 0 0 rgba(196, 30, 42, 0);
 	}
 }
 
@@ -655,7 +655,7 @@ code {
 	position: absolute;
 	inset: 0;
 	background: var(--hero-grad);
-	opacity: 0.22;
+	opacity: 0.16;
 	pointer-events: none;
 }
 
@@ -795,8 +795,8 @@ code {
 	font-weight: 700;
 	padding: 6px 12px;
 	border-radius: 999px;
-	background: rgba(10, 132, 255, 0.12);
-	border: 1px solid rgba(10, 132, 255, 0.28);
+	background: rgba(196, 30, 42, 0.12);
+	border: 1px solid rgba(196, 30, 42, 0.24);
 	color: var(--store-blue);
 	font-variant-numeric: tabular-nums;
 }
@@ -858,6 +858,7 @@ code {
 .store-app-title-line {
 	display: flex;
 	align-items: center;
+	flex-wrap: wrap;
 	gap: 8px;
 }
 
@@ -937,7 +938,7 @@ code {
 }
 
 .store-pill-btn-primary {
-	background: linear-gradient(180deg, #409cff 0%, var(--store-blue) 100%);
+	background: linear-gradient(180deg, #d14654 0%, var(--store-blue) 100%);
 	color: #fff;
 	box-shadow: 0 4px 16px var(--store-blue-glow);
 }
@@ -2171,9 +2172,11 @@ code {
 	overflow-x: visible;
 }
 
-/* Page templates: chat + store fill the main column (no max-width gutter) */
+/* Page templates: chat + store + stream + wallet fill the main column (no max-width gutter) */
 .ds-app--host .ds-page--chat,
-.ds-app--host .ds-page--store {
+.ds-app--host .ds-page--store,
+.ds-app--host .ds-page--stream,
+.ds-app--host .ds-page--wallet {
 	max-width: none;
 	margin: 0;
 	width: 100%;
@@ -2188,7 +2191,9 @@ code {
 	overflow-x: hidden;
 }
 
-.ds-app--host .ds-page--store {
+.ds-app--host .ds-page--store,
+.ds-app--host .ds-page--stream,
+.ds-app--host .ds-page--wallet {
 	overflow-y: auto;
 	overflow-x: visible;
 	min-width: 0;
@@ -2437,6 +2442,20 @@ code {
 	border: none;
 }
 
+.ds-app--host .store-kicker-minimal {
+	margin: 0 0 8px;
+	font-size: 0.66rem;
+	font-weight: 700;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: rgba(255, 255, 255, 0.38);
+}
+
+.ds-app--host .store-head-copy {
+	display: grid;
+	gap: 6px;
+}
+
 .ds-app--host .store-title-minimal {
 	margin: 0;
 	padding-inline: 0.12em;
@@ -2445,6 +2464,14 @@ code {
 	letter-spacing: -0.022em;
 	line-height: 1.25;
 	color: var(--text);
+}
+
+.ds-app--host .store-subtitle-minimal {
+	margin: 0;
+	max-width: 44rem;
+	font-size: 0.84rem;
+	line-height: 1.5;
+	color: rgba(255, 255, 255, 0.48);
 }
 
 .ds-app--host .stream-stage-shell {
@@ -2560,25 +2587,22 @@ code {
 	pointer-events: auto;
 }
 
-.ds-page--store.is-stream-theater {
+.ds-page--stream.is-stream-theater {
 	overflow: hidden;
 }
 
-.ds-page--store.is-stream-theater .store-head-minimal,
-.ds-page--store.is-stream-theater .store-toolbar-row.store-toolbar-minimal,
-.ds-page--store.is-stream-theater .app-store-hint-minimal,
-.ds-page--store.is-stream-theater .store-featured-strip,
-.ds-page--store.is-stream-theater .store-catalog {
+.ds-page--stream.is-stream-theater .stream-head-minimal,
+.ds-page--stream.is-stream-theater .broadcast-console {
 	display: none;
 }
 
-.ds-page--store.is-stream-theater .stream-stage-shell {
+.ds-page--stream.is-stream-theater .stream-stage-shell {
 	flex: 1;
 	display: flex;
 	margin: 0;
 }
 
-.ds-page--store.is-stream-theater .stream-stage-frame {
+.ds-page--stream.is-stream-theater .stream-stage-frame {
 	flex: 1;
 	border-radius: 0;
 	border-inline: none;
@@ -2586,11 +2610,11 @@ code {
 	box-shadow: none;
 }
 
-.ds-page--store.is-stream-theater .stream-stage-head {
+.ds-page--stream.is-stream-theater .stream-stage-head {
 	padding-inline: 24px;
 }
 
-.ds-page--store.is-stream-theater .stream-stage-canvas {
+.ds-page--stream.is-stream-theater .stream-stage-canvas {
 	flex: 1;
 	height: calc(100vh - 96px);
 	min-height: 0;
@@ -3212,8 +3236,8 @@ code {
 	padding: 5px 11px;
 	letter-spacing: 0.03em;
 	border-radius: 999px;
-	background: rgba(10, 132, 255, 0.1);
-	border: 1px solid rgba(10, 132, 255, 0.26);
+	background: rgba(196, 30, 42, 0.1);
+	border: 1px solid rgba(196, 30, 42, 0.22);
 	color: var(--store-blue);
 }
 
@@ -3380,7 +3404,7 @@ code {
 		align-items: center;
 	}
 
-	.ds-page--store.is-stream-theater .stream-stage-shell {
+	.ds-page--stream.is-stream-theater .stream-stage-shell {
 		margin: 0;
 	}
 }

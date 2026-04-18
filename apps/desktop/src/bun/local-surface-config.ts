@@ -37,6 +37,16 @@ const SURFACE_LAUNCH_SEARCH_PARAMS: Record<string, Record<string, string>> = {
 	},
 };
 
+const DIRECT_SURFACE_WINDOW_APPS = new Set([
+	"babylon",
+	"clawville",
+	"hyperscape",
+	"companion",
+	"coding",
+	"steward",
+	"browser",
+]);
+
 const LOCAL_SURFACE_DEV_CONFIGS: Record<string, LocalSurfaceDevConfig> = {
 	kinema: {
 		appId: "kinema",
@@ -61,7 +71,7 @@ const LOCAL_SURFACE_DEV_CONFIGS: Record<string, LocalSurfaceDevConfig> = {
 			args: ["run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"],
 		},
 		readyTimeoutMs: 30000,
-		visualFitMode: "topBand",
+		visualFitMode: "none",
 		bridgeSearchParams: {
 			cartridgeBridge: "1",
 		},
@@ -100,6 +110,12 @@ export function getSurfaceWorkspaceVisualFitMode(
 		return "topBand";
 	}
 	return getLocalSurfaceDevConfig(appId)?.visualFitMode ?? "none";
+}
+
+export function shouldUseDirectSurfaceWindow(
+	appId: string,
+): boolean {
+	return DIRECT_SURFACE_WINDOW_APPS.has(appId);
 }
 
 export function resolveLocalSurfaceLaunch(

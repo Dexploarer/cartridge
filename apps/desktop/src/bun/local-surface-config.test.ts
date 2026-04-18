@@ -5,6 +5,7 @@ import {
 	getSurfaceWorkspaceVisualFitMode,
 	resolveLocalSurfaceLaunch,
 	resolveLocalSurfaceRepoDir,
+	shouldUseDirectSurfaceWindow,
 } from "./local-surface-config";
 
 describe("local surface config", () => {
@@ -50,10 +51,22 @@ describe("local surface config", () => {
 		).toBe("/tmp/kinema-dev");
 	});
 
-	test("uses top-band workspace fit for scape and kinema only", () => {
+	test("uses top-band workspace fit for scape only", () => {
 		expect(getSurfaceWorkspaceVisualFitMode("scape")).toBe("topBand");
-		expect(getSurfaceWorkspaceVisualFitMode("kinema")).toBe("topBand");
+		expect(getSurfaceWorkspaceVisualFitMode("kinema")).toBe("none");
 		expect(getSurfaceWorkspaceVisualFitMode("babylon")).toBe("none");
+	});
+
+	test("prefers direct native windows for iframe-hostile single-pane surfaces", () => {
+		expect(shouldUseDirectSurfaceWindow("babylon")).toBe(true);
+		expect(shouldUseDirectSurfaceWindow("clawville")).toBe(true);
+		expect(shouldUseDirectSurfaceWindow("hyperscape")).toBe(true);
+		expect(shouldUseDirectSurfaceWindow("companion")).toBe(true);
+		expect(shouldUseDirectSurfaceWindow("coding")).toBe(true);
+		expect(shouldUseDirectSurfaceWindow("steward")).toBe(true);
+		expect(shouldUseDirectSurfaceWindow("browser")).toBe(true);
+		expect(shouldUseDirectSurfaceWindow("scape")).toBe(false);
+		expect(shouldUseDirectSurfaceWindow("defense-of-the-agents")).toBe(false);
 	});
 
 	test("adds the Kinema bootstrap launch params for agent sessions", () => {

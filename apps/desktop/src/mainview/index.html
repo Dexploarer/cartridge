@@ -33,6 +33,14 @@
             <span class="nav-rail-ico" aria-hidden="true">▦</span>
             <span class="nav-rail-label">Store</span>
           </button>
+          <button type="button" class="nav-rail-btn" data-tab="stream" title="Stream">
+            <span class="nav-rail-ico" aria-hidden="true">◉</span>
+            <span class="nav-rail-label">Stream</span>
+          </button>
+          <button type="button" class="nav-rail-btn" data-tab="wallet" title="Wallet">
+            <span class="nav-rail-ico" aria-hidden="true">◌</span>
+            <span class="nav-rail-label">Wallet</span>
+          </button>
         </nav>
         <div class="nav-rail-footer">
           <label class="persona-field persona-field-minimal">
@@ -79,7 +87,60 @@
 
         <section id="panel-apps" class="ds-page ds-page--store tab-panel tab-panel-minimal" data-panel="apps" hidden>
           <header class="store-head-minimal">
-            <h1 class="store-title-minimal">Store</h1>
+            <p class="store-kicker-minimal">Launch surfaces</p>
+            <div class="store-head-copy">
+              <h1 class="store-title-minimal">Store</h1>
+              <p class="store-subtitle-minimal">Pick a game or tool and open it without leaving Cartridge.</p>
+            </div>
+          </header>
+          <div class="store-toolbar-row store-toolbar-minimal">
+            <span class="app-store-search-wrap" aria-hidden="true">
+              <svg class="app-store-search-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+            </span>
+            <input
+              type="search"
+              id="apps-search"
+              class="apps-search-input app-store-search"
+              placeholder="Games, tools, packages…"
+              autocomplete="off"
+            />
+            <button type="button" id="apps-refresh" class="btn-secondary store-toolbar-btn">Refresh</button>
+            <button type="button" id="apps-active-only" class="btn-secondary store-toolbar-btn">Active</button>
+          </div>
+          <p class="app-store-hint-minimal"><kbd>/</kbd> search · right-click surface</p>
+          <div id="store-featured-strip" class="store-featured-strip" hidden aria-label="Featured surfaces"></div>
+          <div class="store-catalog">
+            <section class="store-section glass-panel store-section-minimal">
+              <div class="store-section-header">
+                <div class="store-section-titles">
+                  <h2 class="store-section-title">Games</h2>
+                </div>
+                <span id="apps-count-primary" class="store-section-badge"></span>
+              </div>
+              <div id="primary-apps" class="store-scroll-row"></div>
+            </section>
+            <section class="store-section glass-panel store-section-minimal">
+              <div class="store-section-header">
+                <div class="store-section-titles">
+                  <h2 class="store-section-title">Essentials</h2>
+                </div>
+                <span id="apps-count-support" class="store-section-badge"></span>
+              </div>
+              <div id="support-apps" class="store-scroll-row"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="panel-stream" class="ds-page ds-page--stream tab-panel tab-panel-minimal" data-panel="stream" hidden>
+          <header class="store-head-minimal stream-head-minimal">
+            <p class="store-kicker-minimal">Live output</p>
+            <div class="store-head-copy">
+              <h1 class="store-title-minimal">Stream</h1>
+              <p class="store-subtitle-minimal">Watch live sessions and manage the native broadcast output in one place.</p>
+            </div>
           </header>
           <section id="stream-stage-shell" class="stream-stage-shell" hidden aria-label="Live stream stage">
             <div class="stream-stage-frame">
@@ -166,7 +227,17 @@
               <div class="empty-state">Broadcaster logs will appear here.</div>
             </div>
           </section>
-          <section id="babylon-workbench" class="babylon-workbench glass-panel" aria-label="Babylon workbench">
+        </section>
+
+        <section id="panel-wallet" class="ds-page ds-page--wallet tab-panel tab-panel-minimal" data-panel="wallet" hidden>
+          <header class="store-head-minimal wallet-head-minimal">
+            <p class="store-kicker-minimal">Wallet and rails</p>
+            <div class="store-head-copy">
+              <h1 class="store-title-minimal">Wallet</h1>
+              <p class="store-subtitle-minimal">Steward, protocol, and app-specific wallet tools. Babylon controls appear only while Babylon is running.</p>
+            </div>
+          </header>
+          <section id="babylon-workbench" class="babylon-workbench glass-panel" aria-label="Babylon workbench" hidden>
             <div class="babylon-workbench-head">
               <div class="babylon-workbench-copy">
                 <p class="stream-stage-eyebrow">Babylon operator</p>
@@ -431,45 +502,6 @@
               </form>
             </div>
           </section>
-          <div class="store-toolbar-row store-toolbar-minimal">
-            <span class="app-store-search-wrap" aria-hidden="true">
-              <svg class="app-store-search-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="7" />
-                <path d="M21 21l-4.35-4.35" />
-              </svg>
-            </span>
-            <input
-              type="search"
-              id="apps-search"
-              class="apps-search-input app-store-search"
-              placeholder="Games, tools, packages…"
-              autocomplete="off"
-            />
-            <button type="button" id="apps-refresh" class="btn-secondary store-toolbar-btn">Refresh</button>
-            <button type="button" id="apps-active-only" class="btn-secondary store-toolbar-btn">Active</button>
-          </div>
-          <p class="app-store-hint-minimal"><kbd>/</kbd> search · right-click surface</p>
-          <div id="store-featured-strip" class="store-featured-strip" hidden aria-label="Featured surfaces"></div>
-          <div class="store-catalog">
-            <section class="store-section glass-panel store-section-minimal">
-              <div class="store-section-header">
-                <div class="store-section-titles">
-                  <h2 class="store-section-title">Games</h2>
-                </div>
-                <span id="apps-count-primary" class="store-section-badge"></span>
-              </div>
-              <div id="primary-apps" class="store-scroll-row"></div>
-            </section>
-            <section class="store-section glass-panel store-section-minimal">
-              <div class="store-section-header">
-                <div class="store-section-titles">
-                  <h2 class="store-section-title">Essentials</h2>
-                </div>
-                <span id="apps-count-support" class="store-section-badge"></span>
-              </div>
-              <div id="support-apps" class="store-scroll-row"></div>
-            </section>
-          </div>
         </section>
 
         <!-- Runtime bindings live here; no visible UI. -->
